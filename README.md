@@ -2,9 +2,9 @@
 
 AI-assisted analysis foundation for the educational Mini Python and Mini C language subsets.
 
-## Phase 3 status
+## Phase 4 status
 
-Phase 3 adds a genuine Mini C lexer, recursive-descent parser, syntax diagnostics, parse-tree output, and frontend integration. AI generation, code execution, persistence, and comparison remain future work.
+Phase 4 provides a unified multi-language analysis workspace for the Mini Python and Mini C analyzers. It adds line-numbered source input, diagnostic-to-source navigation, consistent diagnostic summaries, resilient AST visualization, and clear partial/error-node presentation. AI generation, code execution, persistence, and comparison remain future work.
 
 ## Architecture
 
@@ -13,6 +13,8 @@ Phase 3 adds a genuine Mini C lexer, recursive-descent parser, syntax diagnostic
 - Frontend and backend are deployed separately.
 - The frontend receives the backend URL from `VITE_API_BASE_URL`.
 - No submitted source code is executed.
+- Diagnostics can be selected to focus the corresponding source line and column.
+- AST branches are keyboard-accessible and incomplete/error nodes are marked explicitly.
 
 ## Requirements
 
@@ -83,6 +85,8 @@ Request:
 ```
 
 The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a JSON-compatible `tree`, grammar version, and summary counts.
+
+The workspace separates lexical and syntax diagnostics by stable diagnostic-code families, shows counts and severity, and provides an empty state when a category has no diagnostics. Selecting a diagnostic focuses the corresponding line and column in the source textarea. The lightweight editor uses reliable line highlighting; precise token-range background highlighting is not provided by the native textarea.
 
 When recovery is possible, malformed statements remain in the partial tree with `attributes.incomplete: true`. Missing or invalid expressions are represented as `ErrorExpression` nodes with an error code and message. These nodes are not valid executable or semantic results; the application never executes submitted code.
 
@@ -182,6 +186,7 @@ Deployment is not considered complete until both public URLs and frontend-to-bac
 ## Known limitations
 
 - Mini Python and Mini C analysis are limited to their documented grammars.
+- The native source textarea supports line-number navigation and selection, but does not provide full IDE-style syntax highlighting.
 - Mini Python and Mini C are planned subsets, not complete languages.
 - No source code is executed.
 - No lexer, parser, AST, AI, comparison, database, or saved history exists yet.
