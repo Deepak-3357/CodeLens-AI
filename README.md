@@ -84,6 +84,8 @@ Request:
 
 The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a JSON-compatible `tree`, grammar version, and summary counts. `mini_c` is rejected until its own analyzer phase.
 
+When recovery is possible, malformed statements remain in the partial tree with `attributes.incomplete: true`. Missing or invalid expressions are represented as `ErrorExpression` nodes with an error code and message. These nodes are not valid executable or semantic results; the application never executes submitted code.
+
 ## Mini Python grammar
 
 Grammar version: `mini-python-1.0`.

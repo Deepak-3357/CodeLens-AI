@@ -100,14 +100,20 @@ class Parser:
         identifier = self.advance()
         self.expect("OPERATOR", "=")
         expression = self.expression()
-        return node("Assignment", [expression] if expression else [], target=identifier.lexeme)
+        attributes: dict[str, Any] = {"target": identifier.lexeme}
+        if contains_error(expression):
+            attributes["incomplete"] = True
+        return node("Assignment", [expression], **attributes)
 
     def print_statement(self) -> dict[str, Any] | None:
         self.advance()
         self.expect("DELIMITER", "(", "Expected '(' after print.")
         expression = self.expression()
         self.expect("DELIMITER", ")", "Expected ')' after print expression.")
-        return node("PrintStatement", [expression] if expression else [])
+        attributes: dict[str, Any] = {}
+        if contains_error(expression):
+            attributes["incomplete"] = True
+        return node("PrintStatement", [expression], **attributes)
 
     def block_statement(self, statement_type: str) -> dict[str, Any] | None:
         keyword = self.advance()
@@ -196,12 +202,24 @@ class Parser:
             return expression
         if token.type in {"NEWLINE", "DEDENT", "EOF"}:
             self.error("PY_EXPECTED_EXPRESSION", "Expected an expression.")
+            return node("ErrorExpression", error_code="PY_EXPECTED_EXPRESSION", message="Expected an expression.")
+        if token.type == "DELIMITER" and token.lexeme in {")", ":"}:
+            self.error("PY_INVALID_EXPRESSION", "Expected an expression before this delimiter.")
+            return node("ErrorExpression", error_code="PY_INVALID_EXPRESSION", message="Expected an expression before this delimiter.")
         else:
             self.error("PY_INVALID_EXPRESSION", "Expected a number, string, boolean, identifier, or parenthesized expression.")
             self.advance()
-        return None
+            return node("ErrorExpression", error_code="PY_INVALID_EXPRESSION", message="Invalid expression.")
 
     def synchronize(self) -> None:
         while not self.check("EOF") and not self.check("NEWLINE") and not self.check("DEDENT"):
             self.advance()
         self.match("NEWLINE")
+
+
+def contains_error(tree: dict[str, Any] | None) -> bool:
+    if tree is None:
+        return True
+    if tree["type"].startswith("Error") or tree.get("attributes", {}).get("incomplete") is True:
+        return True
+    return any(contains_error(child) for child in tree.get("children", []))

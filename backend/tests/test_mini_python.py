@@ -48,6 +48,45 @@ def test_invalid_program_has_diagnostic_and_no_success() -> None:
     assert any(item["code"] == "PY_EXPECTED_TOKEN" for item in result["diagnostics"])
 
 
+def test_missing_assignment_expression_is_explicitly_incomplete() -> None:
+    result = analyze_mini_python("x =\n")
+    assert not result["success"]
+    assert [(item["code"], item["line"], item["column"]) for item in result["diagnostics"]] == [("PY_EXPECTED_EXPRESSION", 1, 4)]
+    assignment = result["tree"]["children"][0]
+    assert assignment["attributes"]["incomplete"] is True
+    assert assignment["children"][0]["type"] == "ErrorExpression"
+
+
+def test_invalid_print_does_not_cascade_missing_close() -> None:
+    result = analyze_mini_python("print(1 + )\n")
+    assert not result["success"]
+    assert [(item["code"], item["line"], item["column"]) for item in result["diagnostics"]] == [("PY_INVALID_EXPRESSION", 1, 11)]
+    statement = result["tree"]["children"][0]
+    assert statement["attributes"]["incomplete"] is True
+    assert statement["children"][0]["children"][1]["type"] == "ErrorExpression"
+
+
+def test_combined_malformed_program_keeps_both_partial_statements() -> None:
+    result = analyze_mini_python("x =\nprint(1 + )\n")
+    assert not result["success"]
+    assert [item["code"] for item in result["diagnostics"]] == ["PY_EXPECTED_EXPRESSION", "PY_INVALID_EXPRESSION"]
+    assert len(result["tree"]["children"]) == 2
+
+
+def test_recovery_preserves_valid_sibling_statement() -> None:
+    result = analyze_mini_python("x =\nprint(1 + )\ny = 20\n")
+    assert not result["success"]
+    assert len(result["tree"]["children"]) == 3
+    assert result["tree"]["children"][2]["attributes"]["target"] == "y"
+    assert "incomplete" not in result["tree"]["children"][2]["attributes"]
+
+
+def test_genuinely_missing_closing_parenthesis_is_reported() -> None:
+    result = analyze_mini_python("print(1 + 2\n")
+    assert not result["success"]
+    assert any(item["code"] == "PY_EXPECTED_TOKEN" for item in result["diagnostics"])
+
+
 def test_lexical_errors_are_safe() -> None:
     result = analyze_mini_python("x = @\n")
     assert not result["lexical_valid"]

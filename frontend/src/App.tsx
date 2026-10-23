@@ -6,7 +6,8 @@ const emptyPanels = ['Lexical errors', 'Syntax diagnostics', 'Comparison results
 function TreeNode({ tree }: { tree: ParseNode }) {
   const [open, setOpen] = useState(true)
   const children = tree.children ?? []
-  return <li className="tree-node"><button className="tree-toggle" type="button" onClick={() => setOpen(!open)} aria-expanded={open}>{children.length > 0 ? (open ? '⌄' : '›') : '•'}</button><span className="tree-type">{tree.type}</span>{tree.attributes && <span className="tree-attributes">{Object.entries(tree.attributes).map(([key, value]) => `${key}=${String(value)}`).join(' · ')}</span>}{open && children.length > 0 && <ul>{children.map((child, index) => <TreeNode key={`${child.type}-${index}`} tree={child} />)}</ul>}</li>
+  const incomplete = tree.attributes?.incomplete === true || tree.type.startsWith('Error')
+  return <li className={`tree-node ${incomplete ? 'tree-incomplete' : ''}`}><button className="tree-toggle" type="button" onClick={() => setOpen(!open)} aria-expanded={open}>{children.length > 0 ? (open ? '⌄' : '›') : '•'}</button><span className="tree-type">{tree.type}</span>{incomplete && <span className="tree-warning">incomplete</span>}{tree.attributes && <span className="tree-attributes">{Object.entries(tree.attributes).filter(([key]) => key !== 'incomplete').map(([key, value]) => `${key}=${String(value)}`).join(' · ')}</span>}{open && children.length > 0 && <ul>{children.map((child, index) => <TreeNode key={`${child.type}-${index}`} tree={child} />)}</ul>}</li>
 }
 
 function App() {
