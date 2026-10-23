@@ -8,6 +8,11 @@ export type Token = { type: string; lexeme: string; line: number; column: number
 export type Diagnostic = { severity: string; code: string; message: string; line: number | null; column: number | null; end_line: number | null; end_column: number | null }
 export type ParseNode = { type: string; attributes?: Record<string, unknown>; children?: ParseNode[] }
 export type AnalysisResult = { language: string; grammar_version: string; lexical_valid: boolean; syntax_valid: boolean; success: boolean; tokens: Token[]; diagnostics: Diagnostic[]; tree: ParseNode | null; summary: { token_count: number; diagnostic_count: number } }
+export type AutomatonState = { id: string; label: string }
+export type AutomatonTransition = { from: string; to: string; label: string; matcher: string }
+export type AutomatonDefinition = { id: string; name: string; description: string; pattern: string; start_state: string; accepting_states: string[]; states: AutomatonState[]; transitions: AutomatonTransition[]; examples?: { accepted: string[]; rejected: string[] } }
+export type AutomatonTraceStep = { step: number; index: number; character: string; current_state: string; transition: string; next_state: string; accepted: boolean }
+export type AutomatonSimulation = { automaton_id: string; input: string; trace: AutomatonTraceStep[]; final_state: string; accepted: boolean; characters_processed: number; failed_transition: { index: number; character: string; from_state: string; to_state: string; transition: string } | null; explanation: string }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -39,4 +44,18 @@ export async function analyzeCode(language: string, code: string): Promise<Analy
     throw new Error('The backend returned an invalid analysis response.')
   }
   return body as AnalysisResult
+}
+
+export function getAutomata(): Promise<{ automata: AutomatonDefinition[] }> {
+  return getJson('/api/automata')
+}
+
+export function getAutomaton(id: string): Promise<AutomatonDefinition> {
+  return getJson(`/api/automata/${id}`)
+}
+
+export async function simulateAutomaton(id: string, input: string): Promise<AutomatonSimulation> {
+  const response = await fetch(`${apiBaseUrl}/api/automata/${id}/simulate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }) })
+  if (!response.ok) throw new Error(`Automaton simulation failed (${response.status})`)
+  return response.json() as Promise<AutomatonSimulation>
 }

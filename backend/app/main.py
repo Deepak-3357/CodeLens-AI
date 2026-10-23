@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.languages.mini_python.analyzer import analyze_mini_python
 from app.languages.mini_c.analyzer import analyze_mini_c
+from app.automata import MAX_AUTOMATA_INPUT, get_automaton, list_automata, simulate
 
 load_dotenv()
 
@@ -62,6 +63,10 @@ class AnalysisResponse(BaseModel):
     summary: dict[str, int]
 
 
+class AutomataSimulationRequest(BaseModel):
+    input: str = Field(max_length=MAX_AUTOMATA_INPUT)
+
+
 def configured_origins() -> list[str]:
     raw_origins = os.getenv(
         "CODELENS_ALLOWED_ORIGINS",
@@ -106,3 +111,24 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
             status_code=422,
             detail="Unsupported language. Choose mini_python or mini_c.",
         )
+
+
+@app.get("/api/automata")
+def automata() -> dict:
+    return {"automata": list_automata()}
+
+
+@app.get("/api/automata/{automaton_id}")
+def automaton_detail(automaton_id: str) -> dict:
+    definition = get_automaton(automaton_id)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Unknown automaton.")
+    return definition
+
+
+@app.post("/api/automata/{automaton_id}/simulate")
+def automaton_simulate(automaton_id: str, request: AutomataSimulationRequest) -> dict:
+    definition = get_automaton(automaton_id)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Unknown automaton.")
+    return simulate(definition, request.input)

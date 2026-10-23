@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { analyzeCode, getHealth, getLanguages, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
+import AutomataLab from './components/AutomataLab'
 
 const lexicalCodes = new Set(['PY_INVALID_CHARACTER', 'PY_MALFORMED_NUMBER', 'PY_UNTERMINATED_STRING', 'PY_INDENT_TAB', 'PY_INCONSISTENT_DEDENT', 'C_INVALID_CHARACTER', 'C_MALFORMED_NUMBER', 'C_UNTERMINATED_STRING', 'C_UNTERMINATED_CHARACTER', 'C_INVALID_CHARACTER_LITERAL', 'C_UNTERMINATED_COMMENT'])
 
@@ -70,6 +71,7 @@ function App() {
     {loading && <div className="loading-card" role="status">Analyzing {selectedLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source…</div>}
     {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} />}
     {!analysis && !loading && <div className="empty-results"><strong>Results are waiting</strong><span>Run the analyzer to view tokens, diagnostics, and the parse tree.</span></div>}
+    <AutomataLab />
     <section className="ai-placeholder"><div><p className="eyebrow">PLANNED FEATURES</p><h2>AI alternatives and comparison</h2><p>AI-assisted alternative generation and evidence-based comparison are planned for a later phase. They are not enabled.</p></div><span className="pill">Not enabled</span></section>
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
   </main>

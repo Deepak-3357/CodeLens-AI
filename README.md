@@ -6,6 +6,8 @@ AI-assisted analysis foundation for the educational Mini Python and Mini C langu
 
 Phase 4 provides a unified multi-language analysis workspace for the Mini Python and Mini C analyzers. It adds line-numbered source input, diagnostic-to-source navigation, consistent diagnostic summaries, resilient AST visualization, and clear partial/error-node presentation. AI generation, code execution, persistence, and comparison remain future work.
 
+Phase 5 adds Automata Lab: an educational DFA registry and interactive simulator for identifier, integer, arithmetic-operator, relational-operator, and whitespace patterns.
+
 ## Architecture
 
 - `frontend/`: React + TypeScript + Vite application.
@@ -87,6 +89,32 @@ Request:
 The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a JSON-compatible `tree`, grammar version, and summary counts.
 
 The workspace separates lexical and syntax diagnostics by stable diagnostic-code families, shows counts and severity, and provides an empty state when a category has no diagnostics. Selecting a diagnostic focuses the corresponding line and column in the source textarea. The lightweight editor uses reliable line highlighting; precise token-range background highlighting is not provided by the native textarea.
+
+## Automata Lab
+
+Automata Lab demonstrates the compiler pipeline:
+
+```text
+Source Code → Lexical Analysis → Tokens → Syntax Analysis → AST
+```
+
+A DFA recognizes regular character patterns used by lexical analysis; it does not replace the recursive-descent parsers or recognize nested programming-language syntax. The lab provides these bounded educational automata:
+
+- Identifier: `letter_or_underscore (letter_or_underscore | digit)*`
+- Integer: `digit+`
+- Arithmetic operator: exactly one of `+`, `-`, `*`, `/`, `%`
+- Relational operator: `<`, `>`, `<=`, `>=`, `==`, `!=`
+- Whitespace: one or more spaces or tabs
+
+The graph shows the authoritative backend states and transitions. Run performs a complete simulation; Previous step and Next step move through the returned trace, while Reset clears it. Rejected inputs report the first failed transition or a non-accepting final state. Empty input is evaluated by the selected automaton rather than a global default.
+
+Automata API endpoints:
+
+- `GET /api/automata` lists available patterns.
+- `GET /api/automata/{automaton_id}` returns states, accepting states, and transitions.
+- `POST /api/automata/{automaton_id}/simulate` accepts `{ "input": "student2" }` and returns the execution trace.
+
+Simulation input is limited to 2,000 characters. These automata are demonstrations of regular lexical patterns and are not claims of complete Python or C lexical compatibility.
 
 When recovery is possible, malformed statements remain in the partial tree with `attributes.incomplete: true`. Missing or invalid expressions are represented as `ErrorExpression` nodes with an error code and message. These nodes are not valid executable or semantic results; the application never executes submitted code.
 
@@ -187,6 +215,7 @@ Deployment is not considered complete until both public URLs and frontend-to-bac
 
 - Mini Python and Mini C analysis are limited to their documented grammars.
 - The native source textarea supports line-number navigation and selection, but does not provide full IDE-style syntax highlighting.
+- Automata Lab uses simplified educational patterns and does not claim to be the exact internal transition implementation of the Mini Python or Mini C lexers.
 - Mini Python and Mini C are planned subsets, not complete languages.
 - No source code is executed.
 - No lexer, parser, AST, AI, comparison, database, or saved history exists yet.
