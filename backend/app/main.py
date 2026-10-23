@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.languages.mini_python.analyzer import analyze_mini_python
+from app.languages.mini_c.analyzer import analyze_mini_c
 
 load_dotenv()
 
@@ -88,17 +89,20 @@ def health() -> HealthResponse:
 def languages() -> LanguagesResponse:
     return LanguagesResponse(
         languages=[
-            Language(id="mini_python", name="Mini Python", status="planned subset"),
-            Language(id="mini_c", name="Mini C", status="planned subset"),
+            Language(id="mini_python", name="Mini Python", status="implemented subset"),
+            Language(id="mini_c", name="Mini C", status="implemented subset"),
         ]
     )
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
 def analyze(request: AnalyzeRequest) -> AnalysisResponse:
-    if request.language != "mini_python":
+    if request.language == "mini_python":
+        return AnalysisResponse(**analyze_mini_python(request.code))
+    if request.language == "mini_c":
+        return AnalysisResponse(**analyze_mini_c(request.code))
+    if request.language not in {"mini_python", "mini_c"}:
         raise HTTPException(
             status_code=422,
-            detail="Only the mini_python analyzer is available in Phase 2; mini_c is planned for a later phase.",
+            detail="Unsupported language. Choose mini_python or mini_c.",
         )
-    return AnalysisResponse(**analyze_mini_python(request.code))

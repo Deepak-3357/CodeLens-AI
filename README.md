@@ -2,9 +2,9 @@
 
 AI-assisted analysis foundation for the educational Mini Python and Mini C language subsets.
 
-## Phase 2 status
+## Phase 3 status
 
-Phase 2 adds a genuine Mini Python lexer, recursive-descent parser, syntax diagnostics, parse-tree output, and frontend integration. Mini C, AI generation, code execution, persistence, and comparison remain future work.
+Phase 3 adds a genuine Mini C lexer, recursive-descent parser, syntax diagnostics, parse-tree output, and frontend integration. AI generation, code execution, persistence, and comparison remain future work.
 
 ## Architecture
 
@@ -82,7 +82,7 @@ Request:
 {"language":"mini_python","code":"x = 10\nprint(x)\n"}
 ```
 
-The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a JSON-compatible `tree`, grammar version, and summary counts. `mini_c` is rejected until its own analyzer phase.
+The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a JSON-compatible `tree`, grammar version, and summary counts.
 
 When recovery is possible, malformed statements remain in the partial tree with `attributes.incomplete: true`. Missing or invalid expressions are represented as `ErrorExpression` nodes with an error code and message. These nodes are not valid executable or semantic results; the application never executes submitted code.
 
@@ -106,6 +106,31 @@ primary ::= NUMBER | STRING | IDENTIFIER | "True" | "False" | "(" expression ")"
 ```
 
 The subset uses spaces for indentation; tabs produce a diagnostic. Blank lines and comment-only lines are ignored. Comments begin with `#` and continue to the end of the line. Numeric integers and decimals, single- and double-quoted strings, the listed operators, and the listed delimiters are supported. Full Python syntax, imports, function definitions, lists, dictionaries, `for`, and runtime semantics are unsupported.
+
+## Mini C grammar
+
+Grammar version: `mini-c-1.0`. Mini C is an educational subset and is not an ISO C compiler.
+
+```text
+program ::= declaration_or_statement*
+declaration_or_statement ::= declaration | statement
+declaration ::= type_specifier IDENTIFIER ("=" expression)? ";"
+type_specifier ::= "int" | "float" | "double" | "char" | "bool"
+statement ::= assignment | printf_statement | block | if_statement | while_statement
+assignment ::= IDENTIFIER "=" expression ";"
+printf_statement ::= "printf" "(" STRING ("," expression)* ")" ";"
+block ::= "{" declaration_or_statement* "}"
+if_statement ::= "if" "(" expression ")" statement ("else" statement)?
+while_statement ::= "while" "(" expression ")" statement
+expression ::= comparison
+comparison ::= additive (("==" | "!=" | "<" | ">" | "<=" | ">=") additive)*
+additive ::= multiplicative (("+" | "-") multiplicative)*
+multiplicative ::= unary (("*" | "/" | "%") unary)*
+unary ::= ("+" | "-" | "!") unary | primary
+primary ::= NUMBER | STRING | CHARACTER | "true" | "false" | IDENTIFIER | "(" expression ")"
+```
+
+Mini C supports `//` and `/* ... */` comments, integer and decimal numbers, quoted strings, character literals, the listed operators and delimiters, nested braces, and boolean literals as an educational extension. Pointers, arrays, structs, functions, preprocessor directives, loops such as `for`, and runtime execution are unsupported. Required semicolons are enforced. Empty input is invalid, and trailing unsupported tokens produce diagnostics.
 
 ## Checks
 
@@ -156,7 +181,7 @@ Deployment is not considered complete until both public URLs and frontend-to-bac
 
 ## Known limitations
 
-- Mini Python analysis is limited to the documented grammar.
+- Mini Python and Mini C analysis are limited to their documented grammars.
 - Mini Python and Mini C are planned subsets, not complete languages.
 - No source code is executed.
 - No lexer, parser, AST, AI, comparison, database, or saved history exists yet.

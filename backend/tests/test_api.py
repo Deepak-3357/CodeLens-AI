@@ -16,7 +16,7 @@ def test_languages_endpoint() -> None:
     response = client.get("/api/languages")
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["languages"]] == ["mini_python", "mini_c"]
-    assert all(item["status"] == "planned subset" for item in response.json()["languages"])
+    assert all(item["status"] == "implemented subset" for item in response.json()["languages"])
 
 
 def test_analyze_endpoint_returns_tokens_and_tree() -> None:
@@ -28,8 +28,14 @@ def test_analyze_endpoint_returns_tokens_and_tree() -> None:
     assert body["tree"]["type"] == "Program"
 
 
-def test_analyze_rejects_mini_c_until_its_phase() -> None:
+def test_analyze_supports_mini_c() -> None:
     response = client.post("/api/analyze", json={"language": "mini_c", "code": "int x = 1;"})
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+def test_analyze_rejects_unknown_language() -> None:
+    response = client.post("/api/analyze", json={"language": "mini_java", "code": "int x = 1;"})
     assert response.status_code == 422
 
 
