@@ -108,6 +108,8 @@ A DFA recognizes regular character patterns used by lexical analysis; it does no
 
 The graph shows the authoritative backend states and transitions. Run performs a complete simulation; Previous step and Next step move through the returned trace, while Reset clears it. Rejected inputs report the first failed transition or a non-accepting final state. Empty input is evaluated by the selected automaton rather than a global default.
 
+The frontend exposes Code Analyzer and Automata Lab as top-level workspace tabs. Switching tabs preserves the analyzer source and language selection, and the Automata Lab graph is available before any simulation is run.
+
 Automata API endpoints:
 
 - `GET /api/automata` lists available patterns.

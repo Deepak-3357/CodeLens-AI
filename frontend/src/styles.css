@@ -5,6 +5,7 @@ button, select, textarea { font: inherit; }
 .app-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 36px; }
 .hero, .section-heading, .action-row, .ai-placeholder { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .hero { margin-bottom: 36px; }
+.workspace-nav { display: flex; gap: 8px; margin: -14px 0 24px; padding: 6px; border: 1px solid #293456; border-radius: 14px; background: rgba(19, 26, 51, .84); }.workspace-nav button { flex: 1; border: 1px solid transparent; color: #a9b4d1; background: transparent; }.workspace-nav button:hover, .workspace-nav button:focus-visible { border-color: #6172ab; color: #edf2ff; }.workspace-nav .active-tab { color: #0d1227; background: #a7b7ff; }
 .eyebrow { margin: 0 0 8px; color: #8fa6ff; font-size: .72rem; font-weight: 800; letter-spacing: .16em; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 8px; font-size: clamp(2.4rem, 6vw, 4.5rem); line-height: .95; letter-spacing: -.06em; }

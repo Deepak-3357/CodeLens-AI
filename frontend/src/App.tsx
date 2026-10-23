@@ -13,6 +13,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [activeLine, setActiveLine] = useState<number | null>(null)
+  const [activeView, setActiveView] = useState<'analyzer' | 'automata'>('analyzer')
   const sourceRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -61,6 +62,8 @@ function App() {
 
   return <main className="app-shell">
     <header className="hero"><div><p className="eyebrow">CODE ANALYSIS WORKSPACE</p><h1>CodeLens AI</h1><p className="subtitle">Multi-Language Analyzer for Mini Python and Mini C</p></div><div className={`connection connection-${connection}`} role="status"><span className="status-dot" />{connection === 'checking' ? 'Checking backend…' : connection === 'connected' ? 'Backend connected' : 'Backend unavailable'}</div></header>
+    <nav className="workspace-nav" aria-label="Workspace sections" role="tablist"><button type="button" role="tab" aria-selected={activeView === 'analyzer'} className={activeView === 'analyzer' ? 'active-tab' : ''} onClick={() => setActiveView('analyzer')}>Code Analyzer</button><button type="button" role="tab" aria-selected={activeView === 'automata'} className={activeView === 'automata' ? 'active-tab' : ''} onClick={() => setActiveView('automata')}>Automata Lab</button></nav>
+    {activeView === 'analyzer' && <>
     <section className="workspace-card" aria-labelledby="workspace-heading">
       <div className="section-heading"><div><p className="eyebrow">SOURCE INPUT</p><h2 id="workspace-heading">Analyze a program</h2></div><label>Language<select value={selectedLanguage} onChange={(event) => updateLanguage(event.target.value)}>{languages.length > 0 ? languages.map((language) => <option key={language.id} value={language.id}>{language.name}</option>) : <><option value="mini_python">Mini Python</option><option value="mini_c">Mini C</option></>}</select></label></div>
       <label className="editor-label" htmlFor="source-code">Original code</label>
@@ -71,8 +74,9 @@ function App() {
     {loading && <div className="loading-card" role="status">Analyzing {selectedLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source…</div>}
     {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} />}
     {!analysis && !loading && <div className="empty-results"><strong>Results are waiting</strong><span>Run the analyzer to view tokens, diagnostics, and the parse tree.</span></div>}
-    <AutomataLab />
     <section className="ai-placeholder"><div><p className="eyebrow">PLANNED FEATURES</p><h2>AI alternatives and comparison</h2><p>AI-assisted alternative generation and evidence-based comparison are planned for a later phase. They are not enabled.</p></div><span className="pill">Not enabled</span></section>
+    </>}
+    {activeView === 'automata' && <AutomataLab />}
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
   </main>
 }
