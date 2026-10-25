@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 import httpx
 import pytest
@@ -77,7 +78,7 @@ def test_generation_requires_backend_key(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.parametrize(
     ("status_code", "expected_status"),
-    [(401, 502), (403, 502), (429, 429), (500, 502), (400, 502)],
+    [(400, 400), (401, 401), (403, 403), (404, 404), (429, 429), (500, 502)],
 )
 def test_provider_http_errors_are_safe(monkeypatch: pytest.MonkeyPatch, status_code: int, expected_status: int) -> None:
     configure_grok(monkeypatch)
@@ -115,6 +116,31 @@ def test_malformed_json_is_rejected_without_echoing_provider_body(monkeypatch: p
     response = client.post("/api/generate-alternative", json={"language": "mini_python", "source_code": "x"})
     assert response.status_code == 502
     assert "provider secret" not in response.text
+
+
+def test_provider_diagnostics_are_categorized_without_sensitive_payload(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_grok(monkeypatch)
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr("app.ai_provider.httpx.post", lambda *args, **kwargs: FakeResponse(status_code=404, payload={"error": {"code": "model_not_found", "message": "model grok-test-model was not found"}}))
+    response = client.post("/api/generate-alternative", json={"language": "mini_python", "source_code": "secret_source = 1"})
+    assert response.status_code == 404
+    assert "category=model_or_endpoint_not_found" in caplog.text
+    assert "provider_code=model_not_found" in caplog.text
+    assert "secret_source" not in caplog.text
+    assert "model grok-test-model was not found" in caplog.text
+
+
+def test_incomplete_response_and_provider_error_object_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_grok(monkeypatch)
+    monkeypatch.setattr("app.ai_provider.httpx.post", lambda *args, **kwargs: FakeResponse(payload={"status": "in_progress", "output": []}))
+    response = client.post("/api/generate-alternative", json={"language": "mini_python", "source_code": "x"})
+    assert response.status_code == 502
+    assert "did not complete" in response.text
+
+    monkeypatch.setattr("app.ai_provider.httpx.post", lambda *args, **kwargs: FakeResponse(payload={"status": "completed", "error": {"code": "provider_error", "message": "provider failed"}}))
+    response = client.post("/api/generate-alternative", json={"language": "mini_python", "source_code": "x"})
+    assert response.status_code == 502
+    assert "provider failed" not in response.text
 
 
 def test_provider_selection_does_not_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
