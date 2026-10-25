@@ -20,6 +20,8 @@ function App() {
   const [generatedLanguage, setGeneratedLanguage] = useState('mini_python')
   const [originalSource, setOriginalSource] = useState('x = 10\ny = 20\nprint(x + y)\n')
   const [generatedSource, setGeneratedSource] = useState('')
+  const [originalStdin, setOriginalStdin] = useState('')
+  const [generatedStdin, setGeneratedStdin] = useState('')
   const [connection, setConnection] = useState<'checking' | 'connected' | 'failed'>('checking')
   const [originalAnalysis, setOriginalAnalysis] = useState<ValidatedResult | null>(null)
   const [generatedAnalysis, setGeneratedAnalysis] = useState<ValidatedResult | null>(null)
@@ -94,6 +96,7 @@ function App() {
   async function handleRun(kind: 'original' | 'generated') {
     const source = kind === 'original' ? originalSource : generatedSource
     const language = kind === 'original' ? originalLanguage : generatedLanguage
+    const stdin = kind === 'original' ? originalStdin : generatedStdin
     const setExecution = kind === 'original' ? setOriginalExecution : setGeneratedExecution
     if (!source.trim()) return
     const submittedSource = source
@@ -105,8 +108,8 @@ function App() {
         setExecution({ language: submittedLanguage, status: 'Error', stdout: '', stderr: 'Execution was not started because lexical or syntax diagnostics are present.', diagnostics: analysis.diagnostics, duration_ms: null, message: 'Execution rejected after validation. Fix the diagnostics and run again.' })
         return
       }
-      const result = await executeCode(submittedLanguage, submittedSource)
-      if ((kind === 'original' ? originalSource : generatedSource) === submittedSource && (kind === 'original' ? originalLanguage : generatedLanguage) === submittedLanguage) setExecution(result)
+      const result = await executeCode(submittedLanguage, submittedSource, stdin)
+      if ((kind === 'original' ? originalSource : generatedSource) === submittedSource && (kind === 'original' ? originalLanguage : generatedLanguage) === submittedLanguage && (kind === 'original' ? originalStdin : generatedStdin) === stdin) setExecution(result)
     } catch (requestError) {
       setExecution({ language: submittedLanguage, status: 'Error', stdout: '', stderr: requestError instanceof Error ? requestError.message : 'Execution request failed.', diagnostics: [], duration_ms: null, message: 'The execution service could not be reached.' })
     }
@@ -162,8 +165,8 @@ function App() {
     {activeView === 'analyzer' && <>
       <section className="workflow-intro"><strong>Analyze, validate, compare</strong><span>Groq-generated code is placed in Editor B automatically. Both editors use the deterministic analyzer independently.</span></section>
       <div className="dual-editors">
-        <CodeEditorPanel kind="original" source={originalSource} language={originalLanguage} languages={languages} loading={originalLoading} error={originalError} valid={originalCurrent ? originalAnalysis.result.success : null} edited={false} relationshipStale={false} execution={originalExecution} onRun={() => handleRun('original')} onSourceChange={updateOriginalSource} onLanguageChange={updateOriginalLanguage} onAnalyze={handleAnalyzeOriginal} sourceRef={originalSourceRef} />
-        <CodeEditorPanel kind="generated" source={generatedSource} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} alternative={alternative} copyStatus={copyStatus} execution={generatedExecution} onRun={() => handleRun('generated')} onCopy={copyAlternative} onFocus={() => generatedSourceRef.current?.focus()} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
+        <CodeEditorPanel kind="original" source={originalSource} stdin={originalStdin} onStdinChange={(value) => { setOriginalStdin(value); setOriginalExecution(null) }} language={originalLanguage} languages={languages} loading={originalLoading} error={originalError} valid={originalCurrent ? originalAnalysis.result.success : null} edited={false} relationshipStale={false} execution={originalExecution} onRun={() => handleRun('original')} onSourceChange={updateOriginalSource} onLanguageChange={updateOriginalLanguage} onAnalyze={handleAnalyzeOriginal} sourceRef={originalSourceRef} />
+        <CodeEditorPanel kind="generated" source={generatedSource} stdin={generatedStdin} onStdinChange={(value) => { setGeneratedStdin(value); setGeneratedExecution(null) }} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} alternative={alternative} copyStatus={copyStatus} execution={generatedExecution} onRun={() => handleRun('generated')} onCopy={copyAlternative} onFocus={() => generatedSourceRef.current?.focus()} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
       </div>
       {originalExecution?.status === 'Success' && generatedExecution?.status === 'Success' && <ExecutionComparison original={originalExecution} generated={generatedExecution} />}
       {originalCurrent && <AnalysisResults title="Original Analysis Output" analysis={originalAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, originalSource, originalSourceRef)} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}

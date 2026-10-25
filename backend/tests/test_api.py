@@ -89,6 +89,24 @@ def test_execute_reports_safe_runtime_block_without_executing_valid_source() -> 
     assert "No code was executed" in body["message"]
 
 
+def test_execute_passes_stdin_to_configured_provider(monkeypatch) -> None:
+    class FakeProvider:
+        def execute(self, language, code, stdin):
+            assert language == "mini_python"
+            assert code == "print(input())"
+            assert stdin == "hello\n"
+            return type("Outcome", (), {
+                "status": "Success", "stdout": "hello\n", "stderr": "", "compile_output": "",
+                "duration_ms": 3.0, "message": "Execution completed successfully in the isolated runtime.", "error_category": None,
+            })()
+
+    monkeypatch.setattr("app.main.OnlineCompilerProvider", FakeProvider)
+    response = client.post("/api/execute", json={"language": "mini_python", "code": "print(input())", "stdin": "hello\n"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "Success"
+    assert response.json()["stdout"] == "hello\n"
+
+
 def test_execute_rejects_unknown_language_and_oversized_source() -> None:
     assert client.post("/api/execute", json={"language": "ruby", "code": "puts 1"}).status_code == 422
     assert client.post("/api/execute", json={"language": "mini_python", "code": "x" * 100001}).status_code == 422

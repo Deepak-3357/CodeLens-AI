@@ -9,6 +9,7 @@ from app.languages.mini_python.analyzer import analyze_mini_python
 from app.languages.mini_c.analyzer import analyze_mini_c
 from app.automata import MAX_AUTOMATA_INPUT, get_automaton, list_automata, simulate
 from app.ai_provider import AIProviderError, GroqProvider, MAX_SOURCE_LENGTH, SUPPORTED_LANGUAGES
+from app.onlinecompiler import OnlineCompilerError, OnlineCompilerProvider
 
 load_dotenv()
 
@@ -36,6 +37,7 @@ class AnalyzeRequest(BaseModel):
 class ExecuteRequest(BaseModel):
     language: str
     code: str = Field(max_length=100_000)
+    stdin: str | None = Field(default=None, max_length=100_000)
 
 
 class TokenResponse(BaseModel):
@@ -77,6 +79,8 @@ class ExecutionResponse(BaseModel):
     status: str
     stdout: str
     stderr: str
+    compile_output: str = ""
+    error_category: str | None = None
     diagnostics: list[DiagnosticResponse]
     duration_ms: float | None = None
     message: str
@@ -160,17 +164,35 @@ def execute(request: ExecuteRequest) -> ExecutionResponse:
             status="Error",
             stdout="",
             stderr="Execution was not started because lexical or syntax diagnostics are present.",
+            compile_output="",
+            error_category="validation",
             diagnostics=diagnostics,
             message="Fix the reported source diagnostics before running code.",
         )
 
+    try:
+        outcome = OnlineCompilerProvider().execute(request.language, request.code, request.stdin)
+    except OnlineCompilerError as error:
+        return ExecutionResponse(
+            language=request.language,
+            status="Timed Out" if error.timed_out else "Error",
+            stdout="",
+            stderr=str(error),
+            compile_output="",
+            error_category=error.category,
+            diagnostics=[],
+            message="Execution did not complete in the configured isolated runtime.",
+        )
     return ExecutionResponse(
         language=request.language,
-        status="Unsupported",
-        stdout="",
-        stderr="",
+        status=outcome.status,
+        stdout=outcome.stdout,
+        stderr=outcome.stderr,
+        compile_output=outcome.compile_output,
         diagnostics=[],
-        message="Execution is blocked: no isolated Mini Python/Mini C runtime is configured. No code was executed.",
+        duration_ms=outcome.duration_ms,
+        error_category=outcome.error_category,
+        message=outcome.message,
     )
 
 

@@ -122,9 +122,24 @@ Only `mini_python` and `mini_c` are accepted. Source must be non-blank and no la
 
 ### Safe execution status
 
-Each editor has an independent Run button and output console. Run first re-analyzes only that editor's current source; lexical or syntax diagnostics produce an `Error` status and prevent execution from starting. Valid source reaches `POST /api/execute`, whose current safe response is `Unsupported`: this repository does not include an isolated Mini Python/Mini C runtime or sandbox, so no submitted or generated code is executed. The consoles keep Editor A and Editor B output, errors, diagnostics, status, and duration separate. Output comparison appears only after two genuine successful executions and is limited to that tested run.
+Each editor has an independent Run button, optional standard input, and output console. Run first re-analyzes only that editor's current source; lexical or syntax diagnostics produce an `Error` status and prevent execution from starting. Valid source reaches `POST /api/execute`, which submits to OnlineCompiler.io's synchronous execution endpoint and returns the actual result. If OnlineCompiler.io is not configured, the response remains `Unsupported` and no code is executed. The consoles keep Editor A and Editor B output, errors, diagnostics, provider category, status, and duration separate. Output comparison appears only after two genuine successful executions and is limited to that tested run.
 
-Do not add `exec`, `eval`, shell execution, or direct subprocess execution to the FastAPI process. A future runtime must be a separately isolated service with CPU, memory, wall-clock, output-size, filesystem, network, environment, and process-creation restrictions before the UI can report execution success.
+OnlineCompiler.io configuration is backend-only; never put these values in frontend environment variables or source control. Configure the following Render/backend variables manually when an authorized API key is available:
+
+```text
+ONLINECOMPILER_API_KEY=<backend secret>
+ONLINECOMPILER_BASE_URL=https://api.onlinecompiler.io
+ONLINECOMPILER_PYTHON_COMPILER=python-3.14
+ONLINECOMPILER_C_COMPILER=gcc-15
+ONLINECOMPILER_REQUEST_TIMEOUT_SECONDS=35
+ONLINECOMPILER_TIME_LIMIT_SECONDS=10
+ONLINECOMPILER_MAX_INPUT_LENGTH=100000
+ONLINECOMPILER_MAX_OUTPUT_LENGTH=64000
+```
+
+The verified current OnlineCompiler.io compiler identifiers are `python-3.14` and `gcc-15`; keep them configurable because provider versions can change. OnlineCompiler.io documents a 100KB source/input limit, a maximum 30-second `time_limit`, and output/error truncation behavior. Mini Python and Mini C are educational analyzers; submitted source is sent unchanged to the selected real Python/C runtime, so analyzer acceptance does not guarantee runtime compatibility and runtime success does not replace static diagnostics. The provider's isolated runtime must be independently trusted and monitored; this FastAPI process never uses `exec`, `eval`, shell execution, or subprocesses.
+
+Do not add `exec`, `eval`, shell execution, or direct subprocess execution to the FastAPI process. The UI reports execution success only from a configured OnlineCompiler.io result with status `success`, exit code `0`, no signal, and non-truncated output. Provider HTTP/auth/rate-limit failures are shown separately from runtime or compilation failures. Deployments must verify the provider's isolation and resource controls.
 
 ## Automata Lab
 
