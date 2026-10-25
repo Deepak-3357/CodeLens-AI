@@ -51,6 +51,10 @@ describe('comparison diagnostics and structure', () => {
     expect(report.diagnosticCodes.persistent).toEqual([{ code: original.code, message: original.message, severity: original.severity, count: 1 }])
     expect(report.diagnosticCodes.added).toEqual([{ code: added.code, message: added.message, severity: added.severity, count: 1 }])
     expect(report.diagnosticCodes.removed).toEqual([{ code: original.code, message: original.message, severity: original.severity, count: 1 }])
+    expect(report.diagnosticCodes.rows).toEqual([
+      { code: original.code, message: original.message, severity: original.severity, originalCount: 2, generatedCount: 1, status: 'removed' },
+      { code: added.code, message: added.message, severity: added.severity, originalCount: 0, generatedCount: 1, status: 'added' },
+    ])
   })
 
   it('keeps structural AST comparison separate from behavioral claims', () => {

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { analyzeCode, generateAlternative, getHealth, getLanguages, type AlternativeGeneration, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
 import { buildComparison } from './services/comparison'
 import AutomataLab from './components/AutomataLab'
-import AlternativePanel from './components/AlternativePanel'
 import CodeEditorPanel from './components/CodeEditorPanel'
 import ComparisonReport from './components/ComparisonReport'
+import GraphicalParseTree from './components/GraphicalParseTree'
 import { mapTokenToDfa, tokenDfaUnavailableReason, type TokenDfaSelection } from './services/tokenDfa'
 
 const lexicalCodes = new Set(['PY_INVALID_CHARACTER', 'PY_MALFORMED_NUMBER', 'PY_UNTERMINATED_STRING', 'PY_INDENT_TAB', 'PY_INCONSISTENT_DEDENT', 'C_INVALID_CHARACTER', 'C_MALFORMED_NUMBER', 'C_UNTERMINATED_STRING', 'C_UNTERMINATED_CHARACTER', 'C_INVALID_CHARACTER_LITERAL', 'C_UNTERMINATED_COMMENT'])
@@ -37,7 +37,6 @@ function App() {
   const [generatedEdited, setGeneratedEdited] = useState(false)
   const [showComparison, setShowComparison] = useState(false)
   const [copyStatus, setCopyStatus] = useState('')
-  const [editorNotice, setEditorNotice] = useState('')
   const originalRequest = useRef(0)
   const generatedRequest = useRef(0)
   const generationRequest = useRef(0)
@@ -51,7 +50,7 @@ function App() {
   }, [])
 
   function updateOriginalSource(value: string) {
-    setOriginalSource(value); setOriginalAnalysis(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setEditorNotice(''); setShowComparison(false); originalRequest.current += 1
+    setOriginalSource(value); setOriginalAnalysis(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setShowComparison(false); originalRequest.current += 1
   }
 
   function updateOriginalLanguage(value: string) {
@@ -94,7 +93,7 @@ function App() {
     if (!originalSource.trim()) { setGenerationError('Enter source code before generating an alternative.'); return }
     const requestId = ++generationRequest.current
     const submittedSource = originalSource; const submittedLanguage = originalLanguage
-    setGenerationLoading(true); setGenerationError(''); setCopyStatus(''); setEditorNotice('')
+    setGenerationLoading(true); setGenerationError(''); setCopyStatus('')
     try {
       const result = await generateAlternative(submittedLanguage, submittedSource)
       if (generationRequest.current === requestId && originalSource === submittedSource && originalLanguage === submittedLanguage) {
@@ -141,9 +140,8 @@ function App() {
       <section className="workflow-intro"><strong>Analyze, validate, compare</strong><span>Groq-generated code is placed in Editor B automatically. Both editors use the deterministic analyzer independently.</span></section>
       <div className="dual-editors">
         <CodeEditorPanel kind="original" source={originalSource} language={originalLanguage} languages={languages} loading={originalLoading} error={originalError} valid={originalCurrent ? originalAnalysis.result.success : null} edited={false} relationshipStale={false} onSourceChange={updateOriginalSource} onLanguageChange={updateOriginalLanguage} onAnalyze={handleAnalyzeOriginal} sourceRef={originalSourceRef} />
-        <CodeEditorPanel kind="generated" source={generatedSource} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
+        <CodeEditorPanel kind="generated" source={generatedSource} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onFocus={() => generatedSourceRef.current?.focus()} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
       </div>
-      <div className="generation-note">{alternative ? <AlternativePanel alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onUse={() => { generatedSourceRef.current?.focus(); setEditorNotice('Generated code is ready in Editor B. Validate it independently before comparing.') }} /> : <div className="ai-placeholder"><div><p className="eyebrow">GROQ GENERATION</p><h2>Generate an alternative</h2><p>Generate a separate educational implementation from the original source. Editor A will never be overwritten.</p></div><button type="button" className="secondary-button" onClick={handleGenerateAlternative} disabled={generationLoading}>{generationLoading ? 'Generating…' : 'Generate Alternative'}</button></div>}{editorNotice && <p className="editor-notice" role="status">{editorNotice}</p>}</div>
       {originalCurrent && <AnalysisResults title="Original Analysis Output" analysis={originalAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, originalSource, originalSourceRef)} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
       {generatedCurrent && <AnalysisResults title="Generated Analysis Output" analysis={generatedAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, generatedSource, generatedSourceRef)} />}
       <section className="comparison-section" aria-labelledby="comparison-action-heading"><div className="comparison-action"><div><p className="eyebrow">COMPARE RESULTS</p><h2 id="comparison-action-heading">Original versus generated</h2><p>{canCompare ? 'Both current analysis results are ready.' : !generatedSource ? 'Generate or enter code in Editor B, then validate both sides.' : !originalCurrent || !generatedCurrent ? 'Validate both current source versions to enable comparison.' : 'The languages must match before comparison.'}</p></div><div className="comparison-controls"><span className="pill">{canCompare ? 'Ready' : 'Waiting for current results'}</span><button type="button" onClick={() => setShowComparison(true)} disabled={!canCompare}>Compare Results</button></div></div>{showComparison && comparison && <ComparisonReport report={comparison} language={originalLanguage} />}</section>
@@ -169,22 +167,7 @@ function DiagnosticPanel({ title, diagnostics, onLocate }: { title: string; diag
 }
 
 function AstPanel({ tree }: { tree: ParseNode | null }) {
-  return <article className="result-panel tree-panel"><h3>Parse tree / AST</h3><p className="tree-help">Grammar nodes are shown with terminal lexemes and source locations where the parser produced them.</p>{tree && typeof tree === 'object' && typeof tree.type === 'string' ? <ul className="tree-root"><TreeNode tree={tree} depth={0} /></ul> : <p>No complete parse tree was produced; see diagnostics and available tokens.</p>}</article>
-}
-
-function TreeNode({ tree, depth }: { tree: ParseNode; depth: number }) {
-  const [open, setOpen] = useState(true)
-  const children = Array.isArray(tree.children) ? tree.children.filter((child): child is ParseNode => Boolean(child && typeof child === 'object' && typeof child.type === 'string')) : []
-  const attributes = tree.attributes && typeof tree.attributes === 'object' ? tree.attributes : {}
-  const incomplete = attributes.incomplete === true || tree.type.startsWith('Error')
-  if (depth > 100) return <li className="tree-node tree-incomplete">Tree depth limit reached.</li>
-  if (tree.type === 'Terminal') {
-    const tokenType = typeof attributes.token_type === 'string' ? attributes.token_type : 'TOKEN'
-    const lexeme = typeof attributes.lexeme === 'string' ? attributes.lexeme : ''
-    const location = attributes.line ? ` · ${attributes.line}:${attributes.column ?? '?'}` : ''
-    return <li className="tree-node tree-terminal"><span className="tree-terminal-marker">•</span><span className="tree-type">{tokenType}</span><code>{lexeme || '∅'}</code><small>{location}</small></li>
-  }
-  return <li className={`tree-node ${incomplete ? 'tree-incomplete' : ''}`}><button className="tree-toggle" type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${tree.type} node`}>{children.length > 0 ? (open ? '⌄' : '›') : '•'}</button><span className="tree-type">{tree.type}</span>{incomplete && <span className="tree-warning">incomplete/error</span>}<span className="tree-attributes">{Object.entries(attributes).filter(([key]) => key !== 'incomplete').map(([key, value]) => `${key}=${String(value)}`).join(' · ')}</span>{open && children.length > 0 && <ul>{children.map((child, index) => <TreeNode key={`${child.type}-${index}`} tree={child} depth={depth + 1} />)}</ul>}</li>
+  return <article className="result-panel tree-panel"><h3>Parse tree / AST</h3><p className="tree-help">Graphical grammar nodes contain terminal lexemes and source locations from the parser-backed tree.</p><GraphicalParseTree tree={tree} /></article>
 }
 
 export default App

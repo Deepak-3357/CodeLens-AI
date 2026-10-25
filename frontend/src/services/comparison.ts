@@ -2,13 +2,14 @@ import type { AnalysisResult, Diagnostic, ParseNode, Token } from './api'
 
 export type DiffLine = { kind: 'same' | 'added' | 'removed'; original?: string; generated?: string; originalEnding?: string; generatedEnding?: string; line: number }
 export type DiagnosticChange = { code: string; message: string; severity: string; count: number }
+export type DiagnosticRow = { code: string; message: string; severity: string; originalCount: number; generatedCount: number; status: 'added' | 'removed' | 'persistent' }
 
 export type ComparisonReport = {
   original: AnalysisResult
   generated: AnalysisResult
   tokenTypeCounts: { original: Record<string, number>; generated: Record<string, number> }
   tokenSequenceEqual: boolean
-  diagnosticCodes: { original: Record<string, number>; generated: Record<string, number>; added: DiagnosticChange[]; removed: DiagnosticChange[]; persistent: DiagnosticChange[] }
+  diagnosticCodes: { original: Record<string, number>; generated: Record<string, number>; added: DiagnosticChange[]; removed: DiagnosticChange[]; persistent: DiagnosticChange[]; rows: DiagnosticRow[] }
   astAvailable: boolean
   astStructureEqual: boolean | null
   sourceDiff: DiffLine[]
@@ -99,12 +100,19 @@ function diagnosticChanges(original: Diagnostic[], generated: Diagnostic[]): Com
     const diagnostic = details.get(key) as Diagnostic
     return { code: diagnostic.code, message: diagnostic.message, severity: diagnostic.severity, count }
   }
+  const rows = keys.map((key) => {
+    const originalCount = originalCounts[key] ?? 0
+    const generatedCount = generatedCounts[key] ?? 0
+    const diagnostic = details.get(key) as Diagnostic
+    return { code: diagnostic.code, message: diagnostic.message, severity: diagnostic.severity, originalCount, generatedCount, status: generatedCount > originalCount ? 'added' as const : originalCount > generatedCount ? 'removed' as const : 'persistent' as const }
+  })
   return {
     original: counts(original.map((diagnostic) => diagnostic.code)),
     generated: counts(generated.map((diagnostic) => diagnostic.code)),
     added: keys.filter((key) => (generatedCounts[key] ?? 0) > (originalCounts[key] ?? 0)).map((key) => toChange(key, (generatedCounts[key] ?? 0) - (originalCounts[key] ?? 0))),
     removed: keys.filter((key) => (originalCounts[key] ?? 0) > (generatedCounts[key] ?? 0)).map((key) => toChange(key, (originalCounts[key] ?? 0) - (generatedCounts[key] ?? 0))),
     persistent: keys.filter((key) => Boolean(originalCounts[key]) && Boolean(generatedCounts[key])).map((key) => toChange(key, Math.min(originalCounts[key], generatedCounts[key]))),
+    rows,
   }
 }
 
