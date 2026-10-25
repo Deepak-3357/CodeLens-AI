@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getAutomata, getAutomaton, simulateAutomaton, type AutomatonDefinition, type AutomatonSimulation, type AutomatonTraceStep } from '../services/api'
+import type { TokenDfaSelection } from '../services/tokenDfa'
 
 const positions = [{ x: 90, y: 130 }, { x: 300, y: 130 }, { x: 510, y: 130 }, { x: 720, y: 130 }, { x: 930, y: 130 }]
 
-export default function AutomataLab() {
+export default function AutomataLab({ selectedToken }: { selectedToken: TokenDfaSelection | null }) {
   const [catalog, setCatalog] = useState<AutomatonDefinition[]>([])
   const [selectedId, setSelectedId] = useState('identifier')
   const [definition, setDefinition] = useState<AutomatonDefinition | null>(null)
@@ -19,6 +20,24 @@ export default function AutomataLab() {
     setCursor(-1)
     if (selectedId) getAutomaton(selectedId).then(setDefinition).catch(() => setError('The selected automaton could not be loaded.'))
   }, [selectedId])
+
+  useEffect(() => {
+    if (!selectedToken) return
+    setSelectedId(selectedToken.automatonId)
+    setInput(selectedToken.lexeme)
+    setSimulation(null)
+    setCursor(-1)
+  }, [selectedToken])
+
+  useEffect(() => {
+    if (!selectedToken || definition?.id !== selectedToken.automatonId) return
+    let cancelled = false
+    setError('')
+    simulateAutomaton(selectedToken.automatonId, selectedToken.lexeme)
+      .then((result) => { if (!cancelled) { setSimulation(result); setCursor(-1) } })
+      .catch((requestError) => { if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'Simulation failed.') })
+    return () => { cancelled = true }
+  }, [definition, selectedToken])
 
   const activeStep = simulation && cursor >= 0 ? simulation.trace[cursor] : null
   const activeState = activeStep ? activeStep.next_state : definition?.start_state
@@ -43,7 +62,7 @@ export default function AutomataLab() {
     setCursor((current) => Math.max(-1, Math.min(simulation.trace.length - 1, current + delta)))
   }
 
-  return <section className="automata-lab" aria-labelledby="automata-heading"><div className="lab-heading"><div><p className="eyebrow">AUTOMATA LAB</p><h2 id="automata-heading">DFA lexical pattern visualizer</h2><p className="lab-description">Explore how deterministic state transitions recognize limited regular patterns used in lexical analysis.</p></div><label>Automaton<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={loading}>{catalog.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label></div>{error && <p className="error-message" role="alert">{error}</p>}{definition && <><div className="automaton-meta"><strong>{definition.name}</strong><span>{definition.description}</span><code>{definition.pattern}</code></div><DfaGraph definition={definition} activeState={activeState} activeTransition={activeTransition} animationKey={cursor} /><SimulationStepStatus simulation={simulation} activeStep={activeStep} cursor={cursor} /><div className="simulation-controls"><label htmlFor={`automata-input-${selectedId}`}>Test input</label><input id={`automata-input-${selectedId}`} value={input} onChange={(event) => { setInput(event.target.value); reset() }} placeholder="Enter characters to simulate" /><button type="button" onClick={run} disabled={loading}>Run</button><button type="button" className="secondary-button" onClick={() => step(-1)} disabled={!simulation || cursor < 0}>Previous step</button><button type="button" className="secondary-button" onClick={() => step(1)} disabled={!simulation || cursor >= simulation.trace.length - 1}>Next step</button><button type="button" className="secondary-button" onClick={reset}>Reset</button></div>{simulation ? <SimulationResult simulation={simulation} cursor={cursor} /> : <p className="lab-empty">Run the automaton to create an execution trace. A result is not shown before simulation.</p>}</>}</section>
+  return <section className="automata-lab" aria-labelledby="automata-heading"><div className="lab-heading"><div><p className="eyebrow">AUTOMATA LAB</p><h2 id="automata-heading">DFA lexical pattern visualizer</h2><p className="lab-description">Explore how deterministic state transitions recognize limited regular patterns used in lexical analysis.</p></div><label>Automaton<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={loading}>{catalog.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label></div>{error && <p className="error-message" role="alert">{error}</p>}{definition && <><div className="automaton-meta"><strong>{definition.name}</strong><span>{definition.description}</span><code>{definition.pattern}</code></div>{selectedToken?.automatonId === definition.id && <div className="token-context" aria-label="Selected token for DFA inspection"><strong>Inspecting token <code>{selectedToken.lexeme}</code></strong><span>{selectedToken.tokenType} · line {selectedToken.line}, column {selectedToken.column}</span><small>{selectedToken.explanation}</small></div>}<DfaGraph definition={definition} activeState={activeState} activeTransition={activeTransition} animationKey={cursor} /><SimulationStepStatus simulation={simulation} activeStep={activeStep} cursor={cursor} /><div className="simulation-controls"><label htmlFor={`automata-input-${selectedId}`}>Test input</label><input id={`automata-input-${selectedId}`} value={input} onChange={(event) => { setInput(event.target.value); reset() }} placeholder="Enter characters to simulate" /><button type="button" onClick={run} disabled={loading}>Run</button><button type="button" className="secondary-button" onClick={() => step(-1)} disabled={!simulation || cursor < 0}>Previous step</button><button type="button" className="secondary-button" onClick={() => step(1)} disabled={!simulation || cursor >= simulation.trace.length - 1}>Next step</button><button type="button" className="secondary-button" onClick={reset}>Reset</button></div>{simulation ? <SimulationResult simulation={simulation} cursor={cursor} /> : <p className="lab-empty">Run the automaton to create an execution trace. A result is not shown before simulation.</p>}</>}</section>
 }
 
 function useReducedMotion() {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { analyzeCode, getHealth, getLanguages, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
 import AutomataLab from './components/AutomataLab'
+import { mapTokenToDfa, tokenDfaUnavailableReason, type TokenDfaSelection } from './services/tokenDfa'
 
 const lexicalCodes = new Set(['PY_INVALID_CHARACTER', 'PY_MALFORMED_NUMBER', 'PY_UNTERMINATED_STRING', 'PY_INDENT_TAB', 'PY_INCONSISTENT_DEDENT', 'C_INVALID_CHARACTER', 'C_MALFORMED_NUMBER', 'C_UNTERMINATED_STRING', 'C_UNTERMINATED_CHARACTER', 'C_INVALID_CHARACTER_LITERAL', 'C_UNTERMINATED_COMMENT'])
 
@@ -14,6 +15,8 @@ function App() {
   const [error, setError] = useState('')
   const [activeLine, setActiveLine] = useState<number | null>(null)
   const [activeView, setActiveView] = useState<'analyzer' | 'automata'>('analyzer')
+  const [selectedToken, setSelectedToken] = useState<TokenDfaSelection | null>(null)
+  const [tokenNotice, setTokenNotice] = useState('')
   const sourceRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -29,6 +32,8 @@ function App() {
     setAnalysis(null)
     setActiveLine(null)
     setError('')
+    setSelectedToken(null)
+    setTokenNotice('')
   }
 
   function updateLanguage(value: string) {
@@ -36,17 +41,33 @@ function App() {
     setAnalysis(null)
     setActiveLine(null)
     setError('')
+    setSelectedToken(null)
+    setTokenNotice('')
   }
 
   async function handleAnalyze() {
     setError('')
     setAnalysis(null)
     setActiveLine(null)
+    setSelectedToken(null)
+    setTokenNotice('')
     if (!source.trim()) { setError('Enter source code before analyzing.'); return }
     setLoading(true)
     try { setAnalysis(await analyzeCode(selectedLanguage, source)) }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'Analysis failed.') }
     finally { setLoading(false) }
+  }
+
+  function inspectToken(token: AnalysisResult['tokens'][number]) {
+    const selection = mapTokenToDfa(token)
+    if (!selection) {
+      setSelectedToken(null)
+      setTokenNotice(tokenDfaUnavailableReason(token))
+      return
+    }
+    setSelectedToken(selection)
+    setTokenNotice('')
+    setActiveView('automata')
   }
 
   function locateDiagnostic(diagnostic: Diagnostic) {
@@ -72,28 +93,28 @@ function App() {
       {error && <p className="error-message" role="alert">{error}</p>}
     </section>
     {loading && <div className="loading-card" role="status">Analyzing {selectedLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source…</div>}
-    {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} />}
+    {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
     {!analysis && !loading && <div className="empty-results"><strong>Results are waiting</strong><span>Run the analyzer to view tokens, diagnostics, and the parse tree.</span></div>}
     <section className="ai-placeholder"><div><p className="eyebrow">PLANNED FEATURES</p><h2>AI alternatives and comparison</h2><p>AI-assisted alternative generation and evidence-based comparison are planned for a later phase. They are not enabled.</p></div><span className="pill">Not enabled</span></section>
     </>}
-    {activeView === 'automata' && <AutomataLab />}
+    {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} />}
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
   </main>
 }
 
-function AnalysisResults({ analysis, onLocate }: { analysis: AnalysisResult; onLocate: (diagnostic: Diagnostic) => void }) {
+function AnalysisResults({ analysis, onLocate, onInspectToken, tokenNotice }: { analysis: AnalysisResult; onLocate: (diagnostic: Diagnostic) => void; onInspectToken: (token: AnalysisResult['tokens'][number]) => void; tokenNotice: string }) {
   const lexicalDiagnostics = useMemo(() => analysis.diagnostics.filter((diagnostic) => lexicalCodes.has(diagnostic.code)), [analysis.diagnostics])
   const syntaxDiagnostics = useMemo(() => analysis.diagnostics.filter((diagnostic) => !lexicalCodes.has(diagnostic.code)), [analysis.diagnostics])
   const warningCount = analysis.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length
   return <section className="analysis-results" aria-label="Analysis results">
     <div className={`analysis-status ${analysis.success ? 'success' : 'failure'}`}><div><strong>{analysis.success ? 'Analysis valid' : 'Issues found'}</strong><span>{analysis.language === 'mini_python' ? 'Mini Python' : 'Mini C'} · {analysis.grammar_version}</span></div><span>{analysis.success ? 'No error-level diagnostics' : `${analysis.diagnostics.length} diagnostic${analysis.diagnostics.length === 1 ? '' : 's'}`}</span></div>
     <div className="summary-row"><span><strong>{analysis.tokens.length}</strong> tokens</span><span><strong>{lexicalDiagnostics.length}</strong> lexical</span><span><strong>{syntaxDiagnostics.length}</strong> syntax</span><span><strong>{warningCount}</strong> warnings</span></div>
-    <div className="results-grid analysis-grid"><TokenPanel tokens={analysis.tokens} /><DiagnosticPanel title="Lexical diagnostics" diagnostics={lexicalDiagnostics} onLocate={onLocate} /><DiagnosticPanel title="Syntax diagnostics" diagnostics={syntaxDiagnostics} onLocate={onLocate} /><AstPanel tree={analysis.tree} /></div>
+    <div className="results-grid analysis-grid"><TokenPanel tokens={analysis.tokens} onInspectToken={onInspectToken} tokenNotice={tokenNotice} /><DiagnosticPanel title="Lexical diagnostics" diagnostics={lexicalDiagnostics} onLocate={onLocate} /><DiagnosticPanel title="Syntax diagnostics" diagnostics={syntaxDiagnostics} onLocate={onLocate} /><AstPanel tree={analysis.tree} /></div>
   </section>
 }
 
-function TokenPanel({ tokens }: { tokens: AnalysisResult['tokens'] }) {
-  return <article className="result-panel token-panel"><h3>Token stream <span>{tokens.length}</span></h3><div className="table-scroll"><table><thead><tr><th>Type</th><th>Lexeme</th><th>Location</th></tr></thead><tbody>{tokens.map((token, index) => <tr key={`${token.type}-${index}`}><td>{token.type}</td><td><code>{token.lexeme || '∅'}</code></td><td>{token.line}:{token.column}</td></tr>)}</tbody></table></div></article>
+function TokenPanel({ tokens, onInspectToken, tokenNotice }: { tokens: AnalysisResult['tokens']; onInspectToken: (token: AnalysisResult['tokens'][number]) => void; tokenNotice: string }) {
+  return <article className="result-panel token-panel"><h3>Token stream <span>{tokens.length}</span></h3><div className="table-scroll"><table><thead><tr><th>Type</th><th>Lexeme</th><th>Location</th></tr></thead><tbody>{tokens.map((token, index) => { const selection = mapTokenToDfa(token); const unavailableReason = tokenDfaUnavailableReason(token); return <tr key={`${token.type}-${index}`}><td>{token.type}</td><td>{selection ? <button type="button" className="token-inspect" onClick={() => onInspectToken(token)} title="Inspect token with DFA" aria-label={`Inspect ${token.lexeme || token.type} token with DFA`}><code>{token.lexeme || '∅'}</code></button> : <code title={unavailableReason}>{token.lexeme || '∅'}</code>}</td><td>{token.line}:{token.column}{selection ? <span className="token-action-hint"> · DFA</span> : <span className="token-unavailable" title={unavailableReason}> · no matching DFA</span>}</td></tr> })}</tbody></table></div>{tokenNotice && <p className="token-notice" role="status">{tokenNotice}</p>}<p className="token-help">Only validated identifier, integer, arithmetic-operator, and relational-operator lexemes can be inspected with the educational DFAs.</p></article>
 }
 
 function DiagnosticPanel({ title, diagnostics, onLocate }: { title: string; diagnostics: Diagnostic[]; onLocate: (diagnostic: Diagnostic) => void }) {
