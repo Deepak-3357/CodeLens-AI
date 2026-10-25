@@ -120,6 +120,12 @@ Response:
 
 Only `mini_python` and `mini_c` are accepted. Source must be non-blank and no larger than 100,000 characters. The generated response populates the separate Groq-Generated Code editor automatically; the original editor and its analysis remain unchanged. Both editors have independent deterministic validation results. The endpoint does not claim equivalence, validation, security, or execution of the generated code.
 
+### Safe execution status
+
+Each editor has an independent Run button and output console. Run first re-analyzes only that editor's current source; lexical or syntax diagnostics produce an `Error` status and prevent execution from starting. Valid source reaches `POST /api/execute`, whose current safe response is `Unsupported`: this repository does not include an isolated Mini Python/Mini C runtime or sandbox, so no submitted or generated code is executed. The consoles keep Editor A and Editor B output, errors, diagnostics, status, and duration separate. Output comparison appears only after two genuine successful executions and is limited to that tested run.
+
+Do not add `exec`, `eval`, shell execution, or direct subprocess execution to the FastAPI process. A future runtime must be a separately isolated service with CPU, memory, wall-clock, output-size, filesystem, network, environment, and process-creation restrictions before the UI can report execution success.
+
 ## Automata Lab
 
 Automata Lab demonstrates the compiler pipeline:
@@ -138,7 +144,15 @@ A DFA recognizes regular character patterns used by lexical analysis; it does no
 
 The graph shows the authoritative backend states and transitions. Run performs a complete simulation; Previous step and Next step move through the returned trace, while Reset clears it. Rejected inputs report the first failed transition or a non-accepting final state. Empty input is evaluated by the selected automaton rather than a global default.
 
-The frontend exposes Code Analyzer and Automata Lab as top-level workspace tabs. Switching tabs preserves the analyzer source and language selection, and the Automata Lab graph is available before any simulation is run.
+The frontend exposes Code Analyzer and Automata Lab as top-level workspace tabs. Switching tabs preserves the analyzer source and language selection. Automata Lab includes a Source Token Explorer: it reuses the current Editor A analysis when available, or loads the source through `POST /api/analyze`, then lists real lexer tokens in source order with type and line/column location. Selecting a token uses only its matching educational DFA; unsupported categories remain visible with an explanation and are never routed through an unrelated automaton. Refreshing source or changing language clears stale token selections and traces.
+
+The integrated flow is:
+
+```text
+Editor A source → existing lexer/analyzer → real token list → category mapping → matching DFA → character trace
+```
+
+Dedicated token mappings currently cover identifiers, digit-only integer literals, single-character arithmetic operators, and supported relational operators. The lexer does not emit ordinary whitespace tokens, and strings, characters, keywords, delimiters, layout tokens, unsupported operators, and other categories intentionally show `No dedicated DFA`. Syntax diagnostics remain separate from lexical diagnostics and DFA demonstration results.
 
 Automata API endpoints:
 

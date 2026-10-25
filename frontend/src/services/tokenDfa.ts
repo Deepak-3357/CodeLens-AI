@@ -1,7 +1,6 @@
 import type { Token } from './api'
 
-export type TokenDfaSelection = {
-  lexeme: string
+export type TokenDfaSelection = Token & {
   tokenType: string
   line: number
   column: number

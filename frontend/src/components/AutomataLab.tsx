@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getAutomata, getAutomaton, simulateAutomaton, type AutomatonDefinition, type AutomatonSimulation, type AutomatonTraceStep } from '../services/api'
-import type { TokenDfaSelection } from '../services/tokenDfa'
+import { analyzeCode, getAutomata, getAutomaton, simulateAutomaton, type AnalysisResult, type AutomatonDefinition, type AutomatonSimulation, type AutomatonTraceStep, type Token } from '../services/api'
+import { mapTokenToDfa, tokenDfaUnavailableReason, type TokenDfaSelection } from '../services/tokenDfa'
 
 const positions = [{ x: 90, y: 130 }, { x: 300, y: 130 }, { x: 510, y: 130 }, { x: 720, y: 130 }, { x: 930, y: 130 }]
 
-export default function AutomataLab({ selectedToken }: { selectedToken: TokenDfaSelection | null }) {
+function isLexicalDiagnostic(code: string) {
+  return code.startsWith('PY_INVALID') || code.startsWith('PY_MALFORMED') || code.startsWith('PY_UNTERMINATED') || code.startsWith('PY_INDENT') || code.startsWith('PY_INCONSISTENT') || code.startsWith('C_INVALID') || code.startsWith('C_MALFORMED') || code.startsWith('C_UNTERMINATED') || code.startsWith('C_UNSUPPORTED_PREPROCESSOR')
+}
+
+type AutomataLabProps = {
+  selectedToken: TokenDfaSelection | null
+  sourceCode: string
+  sourceLanguage: string
+  sourceAnalysis: AnalysisResult | null
+  onInspectToken: (token: Token) => void
+}
+
+export default function AutomataLab({ selectedToken, sourceCode, sourceLanguage, sourceAnalysis, onInspectToken }: AutomataLabProps) {
   const [catalog, setCatalog] = useState<AutomatonDefinition[]>([])
   const [selectedId, setSelectedId] = useState('identifier')
   const [definition, setDefinition] = useState<AutomatonDefinition | null>(null)
@@ -13,6 +25,13 @@ export default function AutomataLab({ selectedToken }: { selectedToken: TokenDfa
   const [cursor, setCursor] = useState(-1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [loadedAnalysis, setLoadedAnalysis] = useState<AnalysisResult | null>(null)
+  const [tokenLoading, setTokenLoading] = useState(false)
+  const [tokenError, setTokenError] = useState('')
+  const [selectedTokenKey, setSelectedTokenKey] = useState('')
+  const [selectedSourceToken, setSelectedSourceToken] = useState<Token | null>(null)
+
+  const activeAnalysis = sourceAnalysis ?? loadedAnalysis
 
   useEffect(() => { getAutomata().then((response) => setCatalog(response.automata)).catch(() => setError('Automata definitions could not be loaded.')).finally(() => setLoading(false)) }, [])
   useEffect(() => {
@@ -28,6 +47,26 @@ export default function AutomataLab({ selectedToken }: { selectedToken: TokenDfa
     setSimulation(null)
     setCursor(-1)
   }, [selectedToken])
+
+  useEffect(() => {
+    setLoadedAnalysis(null)
+    setSelectedTokenKey('')
+    setSelectedSourceToken(null)
+    setTokenError('')
+  }, [sourceCode, sourceLanguage])
+
+  useEffect(() => {
+    if (sourceAnalysis) setLoadedAnalysis(sourceAnalysis)
+  }, [sourceAnalysis])
+
+  useEffect(() => {
+    if (!selectedToken || !activeAnalysis) return
+    const index = activeAnalysis.tokens.findIndex((token) => token.lexeme === selectedToken.lexeme && token.line === selectedToken.line && token.column === selectedToken.column)
+    if (index >= 0) {
+      setSelectedTokenKey(`${index}:${selectedToken.line}:${selectedToken.column}`)
+      setSelectedSourceToken(selectedToken)
+    }
+  }, [activeAnalysis, selectedToken])
 
   useEffect(() => {
     if (!selectedToken || definition?.id !== selectedToken.automatonId) return
@@ -57,12 +96,40 @@ export default function AutomataLab({ selectedToken }: { selectedToken: TokenDfa
 
   function reset() { setSimulation(null); setCursor(-1) }
 
+  async function loadSourceTokens() {
+    if (!sourceCode.trim()) { setTokenError('Enter source code in Editor A before loading tokens.'); return }
+    setTokenLoading(true)
+    setTokenError('')
+    try {
+      const result = await analyzeCode(sourceLanguage, sourceCode)
+      setLoadedAnalysis(result)
+      setSelectedTokenKey('')
+      setSelectedSourceToken(null)
+    } catch (requestError) {
+      setTokenError(requestError instanceof Error ? requestError.message : 'Source tokens could not be loaded.')
+    } finally {
+      setTokenLoading(false)
+    }
+  }
+
+  function selectSourceToken(token: Token, index: number) {
+    setSelectedTokenKey(`${index}:${token.line}:${token.column}`)
+    setSelectedSourceToken(token)
+    const selection = mapTokenToDfa(token)
+    if (selection) onInspectToken(token)
+  }
+
   function step(delta: number) {
     if (!simulation || simulation.trace.length === 0) return
     setCursor((current) => Math.max(-1, Math.min(simulation.trace.length - 1, current + delta)))
   }
 
-  return <section className="automata-lab" aria-labelledby="automata-heading"><div className="lab-heading"><div><p className="eyebrow">AUTOMATA LAB</p><h2 id="automata-heading">DFA lexical pattern visualizer</h2><p className="lab-description">Explore how deterministic state transitions recognize limited regular patterns used in lexical analysis.</p></div><label>Automaton<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={loading}>{catalog.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label></div>{error && <p className="error-message" role="alert">{error}</p>}{definition && <><div className="automaton-meta"><strong>{definition.name}</strong><span>{definition.description}</span><code>{definition.pattern}</code></div>{selectedToken?.automatonId === definition.id && <div className="token-context" aria-label="Selected token for DFA inspection"><strong>Inspecting token <code>{selectedToken.lexeme}</code></strong><span>{selectedToken.tokenType} · line {selectedToken.line}, column {selectedToken.column}</span><small>{selectedToken.explanation}</small></div>}<DfaGraph definition={definition} activeState={activeState} activeTransition={activeTransition} animationKey={cursor} /><SimulationStepStatus simulation={simulation} activeStep={activeStep} cursor={cursor} /><div className="simulation-controls"><label htmlFor={`automata-input-${selectedId}`}>Test input</label><input id={`automata-input-${selectedId}`} value={input} onChange={(event) => { setInput(event.target.value); reset() }} placeholder="Enter characters to simulate" /><button type="button" onClick={run} disabled={loading}>Run</button><button type="button" className="secondary-button" onClick={() => step(-1)} disabled={!simulation || cursor < 0}>Previous step</button><button type="button" className="secondary-button" onClick={() => step(1)} disabled={!simulation || cursor >= simulation.trace.length - 1}>Next step</button><button type="button" className="secondary-button" onClick={reset}>Reset</button></div>{simulation ? <SimulationResult simulation={simulation} cursor={cursor} /> : <p className="lab-empty">Run the automaton to create an execution trace. A result is not shown before simulation.</p>}</>}</section>
+  return <section className="automata-lab" aria-labelledby="automata-heading"><div className="lab-heading"><div><p className="eyebrow">AUTOMATA LAB</p><h2 id="automata-heading">DFA lexical pattern visualizer</h2><p className="lab-description">Explore how deterministic state transitions recognize limited regular patterns used in lexical analysis.</p></div><label>Automaton<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={loading}>{catalog.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label></div>{error && <p className="error-message" role="alert">{error}</p>}<SourceTokenExplorer analysis={activeAnalysis} sourceLanguage={sourceLanguage} tokenLoading={tokenLoading} tokenError={tokenError} selectedTokenKey={selectedTokenKey} selectedToken={selectedSourceToken} onLoad={loadSourceTokens} onSelect={selectSourceToken} />{definition && <><div className="automaton-meta"><strong>{definition.name}</strong><span>{definition.description}</span><code>{definition.pattern}</code></div>{selectedToken?.automatonId === definition.id && <div className="token-context" aria-label="Selected token for DFA inspection"><strong>Inspecting token <code>{selectedToken.lexeme}</code></strong><span>{selectedToken.tokenType} · line {selectedToken.line}, column {selectedToken.column}</span><small>{selectedToken.explanation}</small></div>}<DfaGraph definition={definition} activeState={activeState} activeTransition={activeTransition} animationKey={cursor} /><SimulationStepStatus simulation={simulation} activeStep={activeStep} cursor={cursor} /><div className="simulation-controls"><label htmlFor={`automata-input-${selectedId}`}>Test input</label><input id={`automata-input-${selectedId}`} value={input} onChange={(event) => { setInput(event.target.value); reset() }} placeholder="Enter characters to simulate" /><button type="button" onClick={run} disabled={loading}>Run</button><button type="button" className="secondary-button" onClick={() => step(-1)} disabled={!simulation || cursor < 0}>Previous step</button><button type="button" className="secondary-button" onClick={() => step(1)} disabled={!simulation || cursor >= simulation.trace.length - 1}>Next step</button><button type="button" className="secondary-button" onClick={reset}>Reset</button></div>{simulation ? <SimulationResult simulation={simulation} cursor={cursor} /> : <p className="lab-empty">Run the automaton to create an execution trace. A result is not shown before simulation.</p>}</>}</section>
+}
+
+function SourceTokenExplorer({ analysis, sourceLanguage, tokenLoading, tokenError, selectedTokenKey, selectedToken, onLoad, onSelect }: { analysis: AnalysisResult | null; sourceLanguage: string; tokenLoading: boolean; tokenError: string; selectedTokenKey: string; selectedToken: Token | null; onLoad: () => void; onSelect: (token: Token, index: number) => void }) {
+  const supportedCount = analysis?.tokens.filter((token) => Boolean(mapTokenToDfa(token))).length ?? 0
+  return <article className="source-token-explorer" aria-labelledby="source-token-heading"><div className="source-token-heading"><div><p className="eyebrow">SOURCE TOKEN EXPLORER</p><h3 id="source-token-heading">Tokens from {sourceLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source</h3><p>Load the real lexer output, then select a token to inspect only its matching educational automaton.</p></div><button type="button" onClick={onLoad} disabled={tokenLoading}>{tokenLoading ? 'Loading tokens…' : analysis ? 'Refresh source tokens' : 'Load source tokens'}</button></div>{tokenError && <p className="error-message" role="alert">{tokenError}</p>}{!analysis && !tokenError && <p className="lab-empty">Analyze Editor A or load its source here to inspect tokens.</p>}{analysis && <><div className="source-token-summary" role="status"><span><strong>{analysis.tokens.length}</strong> tokens</span><span><strong>{supportedCount}</strong> DFA-supported</span><span><strong>{analysis.diagnostics.filter((item) => isLexicalDiagnostic(item.code)).length}</strong> lexer diagnostics</span><span><strong>{analysis.diagnostics.filter((item) => !isLexicalDiagnostic(item.code)).length}</strong> parser diagnostics</span></div><div className="source-token-scroll"><table className="source-token-table"><thead><tr><th>Lexeme</th><th>Type</th><th>Location</th><th>Automaton</th></tr></thead><tbody>{analysis.tokens.map((token, index) => { const selection = mapTokenToDfa(token); const key = `${index}:${token.line}:${token.column}`; return <tr className={key === selectedTokenKey ? 'selected-source-token' : ''} key={key}><td><button type="button" className="source-token-button" onClick={() => onSelect(token, index)}><code>{token.lexeme || '∅'}</code></button></td><td>{token.type}</td><td>{token.line}:{token.column}</td><td>{selection ? <span className="token-supported">{selection.automatonId}</span> : <span className="token-unsupported" title={tokenDfaUnavailableReason(token)}>No dedicated DFA</span>}</td></tr> })}</tbody></table></div>{selectedToken && <div className="selected-token-details" role="status"><strong>Selected token <code>{selectedToken.lexeme || '∅'}</code></strong><span>{selectedToken.type} · line {selectedToken.line}, column {selectedToken.column}</span>{mapTokenToDfa(selectedToken) ? <small>Matching automaton: {mapTokenToDfa(selectedToken)?.automatonId}. The DFA will inspect this exact lexeme.</small> : <small>{tokenDfaUnavailableReason(selectedToken) || 'No dedicated automaton is available for this token category yet.'}</small>}</div>}</>}</article>
 }
 
 function useReducedMotion() {

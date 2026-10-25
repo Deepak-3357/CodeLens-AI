@@ -9,6 +9,8 @@ export type Diagnostic = { severity: string; code: string; message: string; line
 export type ParseNode = { type: string; attributes?: Record<string, unknown>; children?: ParseNode[] }
 export type ParseStatus = 'valid_complete' | 'invalid_partial' | 'invalid_no_tree'
 export type AnalysisResult = { language: string; grammar_version: string; lexical_valid: boolean; syntax_valid: boolean; success: boolean; tokens: Token[]; diagnostics: Diagnostic[]; tree: ParseNode | null; parse_tree?: ParseNode | null; parse_status?: ParseStatus; tree_complete?: boolean; summary: { token_count: number; diagnostic_count: number } }
+export type ExecutionStatus = 'Ready' | 'Running' | 'Success' | 'Error' | 'Timed Out' | 'Unsupported'
+export type ExecutionResult = { language: string; status: ExecutionStatus; stdout: string; stderr: string; diagnostics: Diagnostic[]; duration_ms: number | null; message: string }
 export type AutomatonState = { id: string; label: string }
 export type AutomatonTransition = { from: string; to: string; label: string; matcher: string }
 export type AutomatonDefinition = { id: string; name: string; description: string; pattern: string; start_state: string; accepting_states: string[]; states: AutomatonState[]; transitions: AutomatonTransition[]; examples?: { accepted: string[]; rejected: string[] } }
@@ -46,6 +48,18 @@ export async function analyzeCode(language: string, code: string): Promise<Analy
     throw new Error('The backend returned an invalid analysis response.')
   }
   return body as AnalysisResult
+}
+
+export async function executeCode(language: string, code: string): Promise<ExecutionResult> {
+  const response = await fetch(`${apiBaseUrl}/api/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language, code }) })
+  if (!response.ok) {
+    let detail = `Execution request failed (${response.status})`
+    try { const body = await response.json() as { detail?: string }; if (body.detail) detail = body.detail } catch { /* Preserve the status error. */ }
+    throw new Error(detail)
+  }
+  const body = await response.json() as Partial<ExecutionResult>
+  if (!body || typeof body.status !== 'string' || !Array.isArray(body.diagnostics) || typeof body.message !== 'string') throw new Error('The backend returned an invalid execution response.')
+  return body as ExecutionResult
 }
 
 export function getAutomata(): Promise<{ automata: AutomatonDefinition[] }> {

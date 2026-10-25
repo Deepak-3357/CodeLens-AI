@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { analyzeCode, generateAlternative, getHealth, getLanguages, type AlternativeGeneration, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
+import { analyzeCode, executeCode, generateAlternative, getHealth, getLanguages, type AlternativeGeneration, type AnalysisResult, type Diagnostic, type ExecutionResult, type Language, type ParseNode } from './services/api'
 import { buildComparison } from './services/comparison'
 import AutomataLab from './components/AutomataLab'
 import CodeEditorPanel from './components/CodeEditorPanel'
@@ -27,6 +27,8 @@ function App() {
   const [generatedLoading, setGeneratedLoading] = useState(false)
   const [originalError, setOriginalError] = useState('')
   const [generatedError, setGeneratedError] = useState('')
+  const [originalExecution, setOriginalExecution] = useState<ExecutionResult | null>(null)
+  const [generatedExecution, setGeneratedExecution] = useState<ExecutionResult | null>(null)
   const [activeView, setActiveView] = useState<'analyzer' | 'automata'>('analyzer')
   const [selectedToken, setSelectedToken] = useState<TokenDfaSelection | null>(null)
   const [tokenNotice, setTokenNotice] = useState('')
@@ -50,19 +52,19 @@ function App() {
   }, [])
 
   function updateOriginalSource(value: string) {
-    setOriginalSource(value); setOriginalAnalysis(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setShowComparison(false); originalRequest.current += 1
+    setOriginalSource(value); setOriginalAnalysis(null); setOriginalExecution(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setShowComparison(false); originalRequest.current += 1
   }
 
   function updateOriginalLanguage(value: string) {
-    setOriginalLanguage(value); setOriginalAnalysis(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setShowComparison(false); originalRequest.current += 1
+    setOriginalLanguage(value); setOriginalAnalysis(null); setOriginalExecution(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setShowComparison(false); originalRequest.current += 1
   }
 
   function updateGeneratedSource(value: string) {
-    setGeneratedSource(value); setGeneratedAnalysis(null); setGeneratedError(''); setGeneratedEdited(Boolean(generatedOrigin)); setShowComparison(false); generatedRequest.current += 1
+    setGeneratedSource(value); setGeneratedAnalysis(null); setGeneratedExecution(null); setGeneratedError(''); setGeneratedEdited(Boolean(generatedOrigin)); setShowComparison(false); generatedRequest.current += 1
   }
 
   function updateGeneratedLanguage(value: string) {
-    setGeneratedLanguage(value); setGeneratedAnalysis(null); setGeneratedError(''); setShowComparison(false); generatedRequest.current += 1
+    setGeneratedLanguage(value); setGeneratedAnalysis(null); setGeneratedExecution(null); setGeneratedError(''); setShowComparison(false); generatedRequest.current += 1
   }
 
   async function handleAnalyzeOriginal() {
@@ -89,6 +91,27 @@ function App() {
     finally { if (generatedRequest.current === requestId) setGeneratedLoading(false) }
   }
 
+  async function handleRun(kind: 'original' | 'generated') {
+    const source = kind === 'original' ? originalSource : generatedSource
+    const language = kind === 'original' ? originalLanguage : generatedLanguage
+    const setExecution = kind === 'original' ? setOriginalExecution : setGeneratedExecution
+    if (!source.trim()) return
+    const submittedSource = source
+    const submittedLanguage = language
+    setExecution({ language, status: 'Running', stdout: '', stderr: '', diagnostics: [], duration_ms: null, message: `Validating ${kind === 'original' ? 'Editor A' : 'Editor B'} before execution…` })
+    try {
+      const analysis = await analyzeCode(submittedLanguage, submittedSource)
+      if (!analysis.success) {
+        setExecution({ language: submittedLanguage, status: 'Error', stdout: '', stderr: 'Execution was not started because lexical or syntax diagnostics are present.', diagnostics: analysis.diagnostics, duration_ms: null, message: 'Execution rejected after validation. Fix the diagnostics and run again.' })
+        return
+      }
+      const result = await executeCode(submittedLanguage, submittedSource)
+      if ((kind === 'original' ? originalSource : generatedSource) === submittedSource && (kind === 'original' ? originalLanguage : generatedLanguage) === submittedLanguage) setExecution(result)
+    } catch (requestError) {
+      setExecution({ language: submittedLanguage, status: 'Error', stdout: '', stderr: requestError instanceof Error ? requestError.message : 'Execution request failed.', diagnostics: [], duration_ms: null, message: 'The execution service could not be reached.' })
+    }
+  }
+
   async function handleGenerateAlternative() {
     if (!originalSource.trim()) { setGenerationError('Enter source code before generating an alternative.'); return }
     const requestId = ++generationRequest.current
@@ -97,14 +120,14 @@ function App() {
     try {
       const result = await generateAlternative(submittedLanguage, submittedSource)
       if (generationRequest.current === requestId && originalSource === submittedSource && originalLanguage === submittedLanguage) {
-        setAlternative(result); setGeneratedSource(result.generated_code); setGeneratedLanguage(result.language); setGeneratedOrigin({ source: submittedSource, language: submittedLanguage }); setGeneratedEdited(false); setGeneratedAnalysis(null); setGeneratedError(''); setShowComparison(false)
+        setAlternative(result); setGeneratedSource(result.generated_code); setGeneratedLanguage(result.language); setGeneratedOrigin({ source: submittedSource, language: submittedLanguage }); setGeneratedEdited(false); setGeneratedAnalysis(null); setGeneratedExecution(null); setGeneratedError(''); setShowComparison(false)
       }
     } catch (requestError) { if (generationRequest.current === requestId) setGenerationError(requestError instanceof Error ? requestError.message : 'Alternative generation failed.') }
     finally { if (generationRequest.current === requestId) setGenerationLoading(false) }
   }
 
   function clearGenerated() {
-    generationRequest.current += 1; generatedRequest.current += 1; setAlternative(null); setGeneratedSource(''); setGeneratedAnalysis(null); setGeneratedOrigin(null); setGeneratedEdited(false); setGeneratedError(''); setGenerationError(''); setCopyStatus(''); setShowComparison(false)
+    generationRequest.current += 1; generatedRequest.current += 1; setAlternative(null); setGeneratedSource(''); setGeneratedAnalysis(null); setGeneratedExecution(null); setGeneratedOrigin(null); setGeneratedEdited(false); setGeneratedError(''); setGenerationError(''); setCopyStatus(''); setShowComparison(false)
   }
 
   async function copyAlternative(code: string) {
@@ -139,14 +162,15 @@ function App() {
     {activeView === 'analyzer' && <>
       <section className="workflow-intro"><strong>Analyze, validate, compare</strong><span>Groq-generated code is placed in Editor B automatically. Both editors use the deterministic analyzer independently.</span></section>
       <div className="dual-editors">
-        <CodeEditorPanel kind="original" source={originalSource} language={originalLanguage} languages={languages} loading={originalLoading} error={originalError} valid={originalCurrent ? originalAnalysis.result.success : null} edited={false} relationshipStale={false} onSourceChange={updateOriginalSource} onLanguageChange={updateOriginalLanguage} onAnalyze={handleAnalyzeOriginal} sourceRef={originalSourceRef} />
-        <CodeEditorPanel kind="generated" source={generatedSource} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onFocus={() => generatedSourceRef.current?.focus()} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
+        <CodeEditorPanel kind="original" source={originalSource} language={originalLanguage} languages={languages} loading={originalLoading} error={originalError} valid={originalCurrent ? originalAnalysis.result.success : null} edited={false} relationshipStale={false} execution={originalExecution} onRun={() => handleRun('original')} onSourceChange={updateOriginalSource} onLanguageChange={updateOriginalLanguage} onAnalyze={handleAnalyzeOriginal} sourceRef={originalSourceRef} />
+        <CodeEditorPanel kind="generated" source={generatedSource} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} alternative={alternative} copyStatus={copyStatus} execution={generatedExecution} onRun={() => handleRun('generated')} onCopy={copyAlternative} onFocus={() => generatedSourceRef.current?.focus()} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
       </div>
+      {originalExecution?.status === 'Success' && generatedExecution?.status === 'Success' && <ExecutionComparison original={originalExecution} generated={generatedExecution} />}
       {originalCurrent && <AnalysisResults title="Original Analysis Output" analysis={originalAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, originalSource, originalSourceRef)} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
       {generatedCurrent && <AnalysisResults title="Generated Analysis Output" analysis={generatedAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, generatedSource, generatedSourceRef)} />}
       <section className="comparison-section" aria-labelledby="comparison-action-heading"><div className="comparison-action"><div><p className="eyebrow">COMPARE RESULTS</p><h2 id="comparison-action-heading">Original versus generated</h2><p>{canCompare ? 'Both current analysis results are ready.' : !generatedSource ? 'Generate or enter code in Editor B, then validate both sides.' : !originalCurrent || !generatedCurrent ? 'Validate both current source versions to enable comparison.' : 'The languages must match before comparison.'}</p></div><div className="comparison-controls"><span className="pill">{canCompare ? 'Ready' : 'Waiting for current results'}</span><button type="button" onClick={() => setShowComparison(true)} disabled={!canCompare}>Compare Results</button></div></div>{showComparison && comparison && <ComparisonReport report={comparison} language={originalLanguage} />}</section>
     </>}
-    {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} />}
+    {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} sourceCode={originalSource} sourceLanguage={originalLanguage} sourceAnalysis={originalCurrent ? originalAnalysis.result : null} onInspectToken={inspectToken} />}
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
   </main>
 }
@@ -169,6 +193,11 @@ function DiagnosticPanel({ title, diagnostics, onLocate }: { title: string; diag
 function AstPanel({ analysis }: { analysis: AnalysisResult }) {
   const tree = analysis.parse_tree ?? analysis.tree
   return <article className="result-panel tree-panel"><h3>Parse tree / AST</h3><p className="tree-help">Graphical grammar nodes contain terminal lexemes and source locations from the parser-backed tree.</p><GraphicalParseTree tree={tree} parseStatus={analysis.parse_status} treeComplete={analysis.tree_complete} /></article>
+}
+
+function ExecutionComparison({ original, generated }: { original: ExecutionResult; generated: ExecutionResult }) {
+  const matches = original.stdout === generated.stdout
+  return <section className="execution-comparison" aria-label="Execution output comparison"><h2>Observed execution comparison</h2><p>{matches ? 'Outputs match for this tested run only.' : 'Outputs differ for this tested run.'} This is not a proof of equivalence or code quality.</p><div className="execution-comparison-grid"><pre><strong>Editor A stdout</strong>{original.stdout}</pre><pre><strong>Editor B stdout</strong>{generated.stdout}</pre></div></section>
 }
 
 export default App

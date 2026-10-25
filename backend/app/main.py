@@ -33,6 +33,11 @@ class AnalyzeRequest(BaseModel):
     code: str = Field(max_length=100_000)
 
 
+class ExecuteRequest(BaseModel):
+    language: str
+    code: str = Field(max_length=100_000)
+
+
 class TokenResponse(BaseModel):
     type: str
     lexeme: str
@@ -65,6 +70,16 @@ class AnalysisResponse(BaseModel):
     parse_status: str
     tree_complete: bool
     summary: dict[str, int]
+
+
+class ExecutionResponse(BaseModel):
+    language: str
+    status: str
+    stdout: str
+    stderr: str
+    diagnostics: list[DiagnosticResponse]
+    duration_ms: float | None = None
+    message: str
 
 
 class AutomataSimulationRequest(BaseModel):
@@ -127,6 +142,36 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
             status_code=422,
             detail="Unsupported language. Choose mini_python or mini_c.",
         )
+
+
+@app.post("/api/execute", response_model=ExecutionResponse)
+def execute(request: ExecuteRequest) -> ExecutionResponse:
+    if request.language == "mini_python":
+        analysis = analyze_mini_python(request.code)
+    elif request.language == "mini_c":
+        analysis = analyze_mini_c(request.code)
+    else:
+        raise HTTPException(status_code=422, detail="Unsupported language. Choose mini_python or mini_c.")
+
+    diagnostics = [DiagnosticResponse(**item) for item in analysis["diagnostics"]]
+    if diagnostics:
+        return ExecutionResponse(
+            language=request.language,
+            status="Error",
+            stdout="",
+            stderr="Execution was not started because lexical or syntax diagnostics are present.",
+            diagnostics=diagnostics,
+            message="Fix the reported source diagnostics before running code.",
+        )
+
+    return ExecutionResponse(
+        language=request.language,
+        status="Unsupported",
+        stdout="",
+        stderr="",
+        diagnostics=[],
+        message="Execution is blocked: no isolated Mini Python/Mini C runtime is configured. No code was executed.",
+    )
 
 
 @app.get("/api/automata")

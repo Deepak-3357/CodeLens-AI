@@ -1,0 +1,8 @@
+import type { ExecutionResult } from '../services/api'
+
+export default function ExecutionConsole({ kind, execution }: { kind: 'original' | 'generated'; execution: ExecutionResult | null }) {
+  const label = kind === 'original' ? 'Editor A' : 'Editor B'
+  if (!execution) return <section className="execution-console" aria-label={`${label} execution console`}><div className="execution-console-heading"><h3>{label} output console</h3><span className="execution-status ready">Ready</span></div><p>Run this editor after validation to see its independent output or execution status.</p></section>
+  const statusClass = execution.status.toLowerCase().replace(/\s+/g, '-')
+  return <section className="execution-console" aria-label={`${label} execution console`}><div className="execution-console-heading"><h3>{label} output console</h3><span className={`execution-status ${statusClass}`}>{execution.status}</span></div><p className="execution-message">{execution.message}</p>{execution.duration_ms !== null && <span className="execution-duration">Duration: {execution.duration_ms.toFixed(1)} ms</span>}{execution.stdout && <pre className="execution-output"><strong>stdout</strong>{execution.stdout}</pre>}{execution.stderr && <pre className="execution-error"><strong>stderr</strong>{execution.stderr}</pre>}{execution.diagnostics.length > 0 && <ul className="execution-diagnostics">{execution.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.code}-${index}`}><strong>{diagnostic.code}</strong> {diagnostic.message} {diagnostic.line ? `(line ${diagnostic.line}, column ${diagnostic.column ?? '?'})` : ''}</li>)}</ul>}</section>
+}

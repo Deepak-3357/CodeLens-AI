@@ -67,3 +67,28 @@ def test_analyze_rejects_unknown_language() -> None:
 def test_analyze_rejects_oversized_source() -> None:
     response = client.post("/api/analyze", json={"language": "mini_python", "code": "x" * 100001})
     assert response.status_code == 422
+
+
+def test_execute_rejects_invalid_source_before_any_runtime() -> None:
+    response = client.post("/api/execute", json={"language": "mini_python", "code": "if x\n    print(x)\n"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "Error"
+    assert body["stdout"] == ""
+    assert body["diagnostics"][0]["code"] == "PY_EXPECTED_TOKEN"
+    assert "not started" in body["stderr"]
+
+
+def test_execute_reports_safe_runtime_block_without_executing_valid_source() -> None:
+    response = client.post("/api/execute", json={"language": "mini_c", "code": "int x = 1;"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "Unsupported"
+    assert body["stdout"] == ""
+    assert body["diagnostics"] == []
+    assert "No code was executed" in body["message"]
+
+
+def test_execute_rejects_unknown_language_and_oversized_source() -> None:
+    assert client.post("/api/execute", json={"language": "ruby", "code": "puts 1"}).status_code == 422
+    assert client.post("/api/execute", json={"language": "mini_python", "code": "x" * 100001}).status_code == 422
