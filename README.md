@@ -96,9 +96,11 @@ Request:
 {"language":"mini_python","code":"x = 10\nprint(x)\n"}
 ```
 
-The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a JSON-compatible `tree`, grammar version, and summary counts.
+The response includes `lexical_valid`, `syntax_valid`, `success`, token locations, structured diagnostics, a compatibility AST in `tree`, a parser-backed hierarchical `parse_tree` with terminal lexemes and source locations, grammar version, and summary counts.
 
-The workspace separates lexical and syntax diagnostics by stable diagnostic-code families, shows counts and severity, and provides an empty state when a category has no diagnostics. Selecting a diagnostic focuses the corresponding line and column in the source textarea. The lightweight editor uses reliable line highlighting; precise token-range background highlighting is not provided by the native textarea.
+The workspace separates lexical and syntax diagnostics by stable diagnostic-code families, shows counts and severity, and provides an empty state when a category has no diagnostics. Selecting a diagnostic focuses the corresponding line and column in the source textarea. The lightweight editor uses reliable line highlighting; precise token-range background highlighting is not provided by the native textarea. Validation wording refers only to static lexical and syntax checks and does not imply execution, semantic equivalence, or runtime correctness.
+
+The comparison report preserves raw editor text, including indentation, trailing spaces, blank lines, tabs, and newline style. Its visible diff uses `·` for edge spaces, `⇥` for tabs, and explicit LF/CRLF/CR labels. AST differences are structural only and do not establish behavioral differences.
 
 ### `POST /api/generate-alternative`
 

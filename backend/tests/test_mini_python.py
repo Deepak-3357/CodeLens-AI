@@ -13,6 +13,20 @@ def test_lexer_tracks_locations_and_keywords() -> None:
     assert tokens[4].line == 2 and tokens[4].column == 1
 
 
+def test_parse_tree_contains_grammar_nodes_terminal_lexemes_and_locations() -> None:
+    result = analyze_mini_python("x = 10\nprint(x)\n")
+    tree = result["parse_tree"]
+    assert tree["type"] == "Program"
+    assignment = tree["children"][0]
+    assert assignment["type"] == "Assignment"
+    assert [(child["attributes"]["token_type"], child["attributes"]["lexeme"]) for child in assignment["children"][:2]] == [("IDENTIFIER", "x"), ("OPERATOR", "=")]
+    number = assignment["children"][2]
+    assert number["type"] == "NumberLiteral"
+    assert number["children"][0]["attributes"]["lexeme"] == "10"
+    assert number["children"][0]["attributes"]["line"] == 1
+    assert tree["children"][1]["children"][0]["attributes"]["lexeme"] == "print"
+
+
 def test_operator_precedence() -> None:
     result = analyze_mini_python("print(1 + 2 * 3)\n")
     assert result["success"]
@@ -55,6 +69,8 @@ def test_missing_assignment_expression_is_explicitly_incomplete() -> None:
     assignment = result["tree"]["children"][0]
     assert assignment["attributes"]["incomplete"] is True
     assert assignment["children"][0]["type"] == "ErrorExpression"
+    assert result["parse_tree"]["children"][0]["children"][2]["type"] == "ErrorExpression"
+    assert result["parse_tree"]["children"][0]["children"][2]["children"][0]["attributes"]["token_type"] == "EOF"
 
 
 def test_invalid_print_does_not_cascade_missing_close() -> None:

@@ -2,6 +2,7 @@ from typing import Any
 
 from .lexer import lex
 from .parser import Parser
+from app.parse_tree import build_parse_tree
 
 
 GRAMMAR_VERSION = "mini-python-1.0"
@@ -24,6 +25,7 @@ def analyze_mini_python(source: str) -> dict[str, Any]:
         "tokens": visible_tokens,
         "diagnostics": diagnostics,
         "tree": tree if syntax_valid else tree,
+        "parse_tree": build_parse_tree(tree, tokens, "mini_python"),
         "summary": {
             "token_count": len(visible_tokens),
             "diagnostic_count": len(diagnostics),

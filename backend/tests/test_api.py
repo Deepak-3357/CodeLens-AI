@@ -26,6 +26,7 @@ def test_analyze_endpoint_returns_tokens_and_tree() -> None:
     assert body["success"] is True
     assert body["grammar_version"] == "mini-python-1.0"
     assert body["tree"]["type"] == "Program"
+    assert body["parse_tree"]["type"] == "Program"
 
 
 def test_analyze_supports_mini_c() -> None:

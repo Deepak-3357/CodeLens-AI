@@ -9,6 +9,17 @@ def test_declaration_and_locations() -> None:
     assert tokens[0].line == 1 and tokens[0].column == 1
 
 
+def test_parse_tree_contains_c_terminals_and_lexemes() -> None:
+    result = analyze_mini_c('int x = 10; printf("%d", x);')
+    tree = result["parse_tree"]
+    declaration = tree["children"][0]
+    assert [child["attributes"]["lexeme"] for child in declaration["children"][:3]] == ["int", "x", "="]
+    assert declaration["children"][3]["children"][0]["attributes"]["lexeme"] == "10"
+    printf = tree["children"][1]
+    assert printf["children"][0]["attributes"]["lexeme"] == "printf"
+    assert printf["children"][2]["children"][0]["attributes"]["lexeme"] == '"%d"'
+
+
 def test_multiple_declarations_assignment_and_printf() -> None:
     result = analyze_mini_c('int x = 10; int y = 20; x = x + y; printf("%d", x);')
     assert result["success"]
@@ -49,6 +60,13 @@ def test_missing_initializer_and_invalid_operator_recover() -> None:
     assert not result["success"]
     assert any(item["code"] == "C_EXPECTED_EXPRESSION" for item in result["diagnostics"])
     assert result["tree"]["children"][-1]["attributes"]["name"] == "z"
+
+
+def test_invalid_source_keeps_partial_parse_tree_terminals() -> None:
+    result = analyze_mini_c("int x =;")
+    assert result["parse_tree"]["children"][0]["type"] == "Declaration"
+    assert result["parse_tree"]["children"][0]["children"][3]["type"] == "ErrorExpression"
+    assert result["parse_tree"]["children"][0]["children"][3]["children"][0]["attributes"]["lexeme"] == ";"
 
 
 def test_delimiters_and_literals_diagnose() -> None:
