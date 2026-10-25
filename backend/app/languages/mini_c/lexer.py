@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from typing import Any
 
 
-KEYWORDS = {"int", "float", "double", "char", "bool", "if", "else", "while", "printf", "true", "false"}
-TYPE_KEYWORDS = {"int", "float", "double", "char", "bool"}
-TWO_CHARACTER_OPERATORS = {"==", "!=", "<=", ">="}
-ONE_CHARACTER_OPERATORS = {"=", "+", "-", "*", "/", "%", "<", ">", "!"}
-DELIMITERS = {"(", ")", "{", "}", ",", ";"}
+KEYWORDS = {"int", "float", "double", "char", "bool", "void", "const", "struct", "enum", "typedef", "if", "else", "while", "do", "for", "switch", "case", "default", "return", "break", "continue", "printf", "true", "false"}
+TYPE_KEYWORDS = {"int", "float", "double", "char", "bool", "void"}
+TWO_CHARACTER_OPERATORS = {"==", "!=", "<=", ">=", "++", "--", "+=", "-=", "*=", "/=", "%=", "&&", "||", "->", "<<", ">>"}
+ONE_CHARACTER_OPERATORS = {"=", "+", "-", "*", "/", "%", "<", ">", "!", "&", "|", "~"}
+DELIMITERS = {"(", ")", "{", "}", "[", "]", ",", ";", ":", "."}
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,20 @@ def lex(source: str) -> tuple[list[Token], list[LexicalDiagnostic]]:
         character = source[index]
         if character.isspace():
             advance()
+            continue
+        if character == "#" and (index == 0 or source[source.rfind("\n", 0, index) + 1:index].strip() == ""):
+            start_line, start_column = line, column
+            value = ""
+            while index < length and source[index] != "\n":
+                value += advance()
+            if value.startswith("#include"):
+                target = value[len("#include"):].strip()
+                valid_target = (target.startswith("<") and target.endswith(">")) or (target.startswith('"') and target.endswith('"'))
+                if not valid_target:
+                    diagnostics.append(_diag("C_MALFORMED_INCLUDE", "Expected a header name in angle brackets or quotes after #include.", start_line, start_column, column))
+                tokens.append(_token("PREPROCESSOR", value, start_line, start_column, column))
+            else:
+                diagnostics.append(_diag("C_UNSUPPORTED_PREPROCESSOR", "Only #include directives are supported.", start_line, start_column, column))
             continue
         start_line, start_column = line, column
         if source.startswith("//", index):

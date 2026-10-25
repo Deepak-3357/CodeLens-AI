@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from typing import Any
 
 
-KEYWORDS = {"print", "if", "else", "while", "True", "False"}
-TWO_CHARACTER_OPERATORS = {"==", "!=", "<=", ">="}
-ONE_CHARACTER_OPERATORS = {"=", "+", "-", "*", "/", "%", "<", ">"}
-DELIMITERS = {"(", ")", ":"}
+KEYWORDS = {"print", "if", "elif", "else", "while", "for", "in", "is", "def", "return", "break", "continue", "pass", "import", "from", "as", "try", "except", "finally", "raise", "with", "global", "nonlocal", "lambda", "True", "False", "None", "and", "or", "not"}
+TWO_CHARACTER_OPERATORS = {"==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "**", "//", "<<", ">>"}
+ONE_CHARACTER_OPERATORS = {"=", "+", "-", "*", "/", "%", "<", ">", "&", "|", "^", "~"}
+DELIMITERS = {"(", ")", ":", ",", ".", "[", "]", "{", "}"}
 
 
 @dataclass(frozen=True)

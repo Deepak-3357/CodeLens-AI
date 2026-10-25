@@ -156,36 +156,53 @@ Grammar version: `mini-python-1.0`.
 
 ```text
 program ::= statement*
-statement ::= assignment | print_statement | if_statement | while_statement
+statement ::= assignment | print_statement | call_statement | if_statement | while_statement | for_statement | function_definition | return_statement | import_statement | from_import_statement | try_statement | raise_statement | with_statement | pass | break | continue
 assignment ::= IDENTIFIER "=" expression NEWLINE
 print_statement ::= "print" "(" expression ")" NEWLINE
-if_statement ::= "if" expression ":" NEWLINE INDENT statement+ DEDENT ("else" ":" NEWLINE INDENT statement+ DEDENT)?
+call_statement ::= IDENTIFIER "(" [expression ("," expression)*] ")" NEWLINE
+if_statement ::= "if" expression ":" NEWLINE INDENT statement+ DEDENT ("elif" expression ":" NEWLINE INDENT statement+ DEDENT)* ("else" ":" NEWLINE INDENT statement+ DEDENT)?
 while_statement ::= "while" expression ":" NEWLINE INDENT statement+ DEDENT
+for_statement ::= "for" IDENTIFIER "in" expression ":" NEWLINE INDENT statement+ DEDENT
+function_definition ::= "def" IDENTIFIER "(" [IDENTIFIER ("," IDENTIFIER)*] ")" ":" NEWLINE INDENT statement+ DEDENT
+return_statement ::= "return" [expression] NEWLINE
+import_statement ::= "import" module_name ["as" IDENTIFIER] ("," module_name ["as" IDENTIFIER])* NEWLINE
+from_import_statement ::= "from" module_name "import" IDENTIFIER ("," IDENTIFIER)* NEWLINE
 expression ::= comparison
 comparison ::= additive (("==" | "!=" | "<" | ">" | "<=" | ">=") additive)*
 additive ::= multiplicative (("+" | "-") multiplicative)*
 multiplicative ::= unary (("*" | "/" | "%") unary)*
 unary ::= ("+" | "-") unary | primary
-primary ::= NUMBER | STRING | IDENTIFIER | "True" | "False" | "(" expression ")"
+primary ::= NUMBER | STRING | IDENTIFIER | call | "True" | "False" | "(" expression ")"
+call ::= IDENTIFIER "(" [expression ("," expression)*] ")"
+collection ::= list | tuple | dictionary | set
 ```
 
-The subset uses spaces for indentation; tabs produce a diagnostic. Blank lines and comment-only lines are ignored. Comments begin with `#` and continue to the end of the line. Numeric integers and decimals, single- and double-quoted strings, the listed operators, and the listed delimiters are supported. Full Python syntax, imports, function definitions, lists, dictionaries, `for`, and runtime semantics are unsupported.
+The beginner-level subset uses spaces for indentation; tabs produce a diagnostic. Blank lines and comment-only lines are ignored. Comments begin with `#` and continue to the end of the line. It supports assignments to names, indexes, and members; calls; `if`/`elif`/`else`; `while`/`for` with optional `else`; `range(...)` syntax; arithmetic, comparison, membership, identity, boolean, bitwise, shift, floor-division, and power operators; `None` and booleans; simple function definitions and returns; `import`/`from ... import ...`; collections; indexing/slicing; member access; `try`/`except`/`finally`; `raise`; `with`; and loop-control statements. This is syntax-only analysis: imports and calls are never executed, names are not resolved, and comprehensions, decorators, annotations, and advanced Python semantics remain outside the declared scope.
 
 ## Mini C grammar
 
 Grammar version: `mini-c-1.0`. Mini C is an educational subset and is not an ISO C compiler.
 
 ```text
-program ::= declaration_or_statement*
-declaration_or_statement ::= declaration | statement
-declaration ::= type_specifier IDENTIFIER ("=" expression)? ";"
-type_specifier ::= "int" | "float" | "double" | "char" | "bool"
-statement ::= assignment | printf_statement | block | if_statement | while_statement
+program ::= preprocessor_directive* declaration_or_statement*
+declaration_or_statement ::= declaration | statement | function_definition
+declaration ::= type_specifier IDENTIFIER ("[" expression "]")* ("=" expression)? ";"
+type_specifier ::= "int" | "float" | "double" | "char" | "bool" | "void"
+typedef_declaration ::= "typedef" type_specifier IDENTIFIER ";"
+struct_declaration ::= "struct" IDENTIFIER "{" declaration* "}" ";"
+enum_declaration ::= "enum" IDENTIFIER "{" IDENTIFIER ("," IDENTIFIER)* "}" ";"
+statement ::= assignment | printf_statement | call_statement | block | if_statement | while_statement | for_statement | return_statement
 assignment ::= IDENTIFIER "=" expression ";"
 printf_statement ::= "printf" "(" STRING ("," expression)* ")" ";"
+call_statement ::= IDENTIFIER "(" [expression ("," expression)*] ")" ";"
 block ::= "{" declaration_or_statement* "}"
 if_statement ::= "if" "(" expression ")" statement ("else" statement)?
 while_statement ::= "while" "(" expression ")" statement
+for_statement ::= "for" "(" (declaration | assignment) expression ";" expression ")" statement
+function_definition ::= type_specifier IDENTIFIER "(" ["void" | parameter ("," parameter)*] ")" block
+parameter ::= type_specifier IDENTIFIER
+return_statement ::= "return" [expression] ";"
+preprocessor_directive ::= "#include" ("<" module ">" | STRING)
 expression ::= comparison
 comparison ::= additive (("==" | "!=" | "<" | ">" | "<=" | ">=") additive)*
 additive ::= multiplicative (("+" | "-") multiplicative)*
@@ -194,7 +211,7 @@ unary ::= ("+" | "-" | "!") unary | primary
 primary ::= NUMBER | STRING | CHARACTER | "true" | "false" | IDENTIFIER | "(" expression ")"
 ```
 
-Mini C supports `//` and `/* ... */` comments, integer and decimal numbers, quoted strings, character literals, the listed operators and delimiters, nested braces, and boolean literals as an educational extension. Pointers, arrays, structs, functions, preprocessor directives, loops such as `for`, and runtime execution are unsupported. Required semicolons are enforced. Empty input is invalid, and trailing unsupported tokens produce diagnostics.
+Mini C supports `//` and `/* ... */` comments, integer and decimal numbers, quoted strings, character literals, nested braces, declarations including `const`, multiple declarators, arrays and initializer lists, indexing, basic pointer/address-of syntax, named `struct`/`enum` variables, assignments including compound operators, calls, function prototypes and definitions, `struct`, `enum`, and `typedef` declaration syntax, logical/bitwise expressions, `if`/`else`, `while`, `do`/`while`, `for`, `switch`/`case`/`default`, `break`, `continue`, `return`, and syntax-only `#include` recognition. It does not execute functions, includes, or runtime behavior. Full pointer/type checking, struct member semantics, multidimensional semantics, and macro expansion remain outside the declared scope. Required semicolons are enforced. Empty input is invalid.
 
 ## Checks
 
