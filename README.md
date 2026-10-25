@@ -116,7 +116,7 @@ Response:
 {"language":"mini_python","generated_code":"y = 10\nprint(y)","provider":"groq","model":"openai/gpt-oss-20b"}
 ```
 
-Only `mini_python` and `mini_c` are accepted. Source must be non-blank and no larger than 100,000 characters. The generated panel preserves the original editor and analysis results. **Use in Editor** is explicit and requires a fresh deterministic analysis. The endpoint does not claim equivalence, validation, security, or execution of the generated code.
+Only `mini_python` and `mini_c` are accepted. Source must be non-blank and no larger than 100,000 characters. The generated response populates the separate Groq-Generated Code editor automatically; the original editor and its analysis remain unchanged. Both editors have independent deterministic validation results. The endpoint does not claim equivalence, validation, security, or execution of the generated code.
 
 ## Automata Lab
 
@@ -248,5 +248,5 @@ Deployment is not considered complete until both public URLs and frontend-to-bac
 - Automata Lab uses simplified educational patterns and does not claim to be the exact internal transition implementation of the Mini Python or Mini C lexers.
 - Mini Python and Mini C are planned subsets, not complete languages.
 - No source code is executed.
-- No database, saved history, generated-code validation, or original-versus-generated comparison exists yet. Phase 6 generation is Groq-only and requires backend environment configuration.
+- No database, saved history, or runtime execution exists yet. Phase 6 generation is Groq-only; the dual-editor milestone independently validates both source versions and compares their static analysis results.
 - Public free-tier hosting may have cold starts and usage limits.

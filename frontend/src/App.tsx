@@ -1,173 +1,167 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { analyzeCode, generateAlternative, getHealth, getLanguages, type AlternativeGeneration, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
+import { buildComparison } from './services/comparison'
 import AutomataLab from './components/AutomataLab'
 import AlternativePanel from './components/AlternativePanel'
+import CodeEditorPanel from './components/CodeEditorPanel'
+import ComparisonReport from './components/ComparisonReport'
 import { mapTokenToDfa, tokenDfaUnavailableReason, type TokenDfaSelection } from './services/tokenDfa'
 
 const lexicalCodes = new Set(['PY_INVALID_CHARACTER', 'PY_MALFORMED_NUMBER', 'PY_UNTERMINATED_STRING', 'PY_INDENT_TAB', 'PY_INCONSISTENT_DEDENT', 'C_INVALID_CHARACTER', 'C_MALFORMED_NUMBER', 'C_UNTERMINATED_STRING', 'C_UNTERMINATED_CHARACTER', 'C_INVALID_CHARACTER_LITERAL', 'C_UNTERMINATED_COMMENT'])
+type ValidatedResult = { result: AnalysisResult; source: string; language: string }
+
+function isCurrent(value: ValidatedResult | null, source: string, language: string): value is ValidatedResult {
+  return Boolean(value && value.source === source && value.language === language)
+}
 
 function App() {
   const [languages, setLanguages] = useState<Language[]>([])
-  const [selectedLanguage, setSelectedLanguage] = useState('mini_python')
-  const [source, setSource] = useState('x = 10\ny = 20\nprint(x + y)\n')
+  const [originalLanguage, setOriginalLanguage] = useState('mini_python')
+  const [generatedLanguage, setGeneratedLanguage] = useState('mini_python')
+  const [originalSource, setOriginalSource] = useState('x = 10\ny = 20\nprint(x + y)\n')
+  const [generatedSource, setGeneratedSource] = useState('')
   const [connection, setConnection] = useState<'checking' | 'connected' | 'failed'>('checking')
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [activeLine, setActiveLine] = useState<number | null>(null)
+  const [originalAnalysis, setOriginalAnalysis] = useState<ValidatedResult | null>(null)
+  const [generatedAnalysis, setGeneratedAnalysis] = useState<ValidatedResult | null>(null)
+  const [originalLoading, setOriginalLoading] = useState(false)
+  const [generatedLoading, setGeneratedLoading] = useState(false)
+  const [originalError, setOriginalError] = useState('')
+  const [generatedError, setGeneratedError] = useState('')
   const [activeView, setActiveView] = useState<'analyzer' | 'automata'>('analyzer')
   const [selectedToken, setSelectedToken] = useState<TokenDfaSelection | null>(null)
   const [tokenNotice, setTokenNotice] = useState('')
   const [alternative, setAlternative] = useState<AlternativeGeneration | null>(null)
   const [generationLoading, setGenerationLoading] = useState(false)
   const [generationError, setGenerationError] = useState('')
+  const [generatedOrigin, setGeneratedOrigin] = useState<{ source: string; language: string } | null>(null)
+  const [generatedEdited, setGeneratedEdited] = useState(false)
+  const [showComparison, setShowComparison] = useState(false)
   const [copyStatus, setCopyStatus] = useState('')
   const [editorNotice, setEditorNotice] = useState('')
+  const originalRequest = useRef(0)
+  const generatedRequest = useRef(0)
   const generationRequest = useRef(0)
-  const sourceRef = useRef<HTMLTextAreaElement>(null)
+  const originalSourceRef = useRef<HTMLTextAreaElement>(null)
+  const generatedSourceRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     Promise.all([getHealth(), getLanguages()])
       .then(([, response]) => { setLanguages(response.languages); setConnection('connected') })
-      .catch(() => { setConnection('failed'); setError('The backend is unavailable. Start FastAPI or check VITE_API_BASE_URL.') })
+      .catch(() => { setConnection('failed'); setOriginalError('The backend is unavailable. Start FastAPI or check VITE_API_BASE_URL.') })
   }, [])
 
-  const lineCount = Math.max(source.split('\n').length, 1)
-
-  function updateSource(value: string) {
-    setSource(value)
-    setAnalysis(null)
-    setActiveLine(null)
-    setError('')
-    setSelectedToken(null)
-    setTokenNotice('')
-    generationRequest.current += 1
-    setAlternative(null)
-    setGenerationLoading(false)
-    setGenerationError('')
-    setCopyStatus('')
-    setEditorNotice('')
+  function updateOriginalSource(value: string) {
+    setOriginalSource(value); setOriginalAnalysis(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setEditorNotice(''); setShowComparison(false); originalRequest.current += 1
   }
 
-  function updateLanguage(value: string) {
-    setSelectedLanguage(value)
-    setAnalysis(null)
-    setActiveLine(null)
-    setError('')
-    setSelectedToken(null)
-    setTokenNotice('')
-    generationRequest.current += 1
-    setAlternative(null)
-    setGenerationLoading(false)
-    setGenerationError('')
-    setCopyStatus('')
-    setEditorNotice('')
+  function updateOriginalLanguage(value: string) {
+    setOriginalLanguage(value); setOriginalAnalysis(null); setOriginalError(''); setSelectedToken(null); setTokenNotice(''); setShowComparison(false); originalRequest.current += 1
   }
 
-  async function handleAnalyze() {
-    setError('')
-    setAnalysis(null)
-    setActiveLine(null)
-    setSelectedToken(null)
-    setTokenNotice('')
-    setEditorNotice('')
-    if (!source.trim()) { setError('Enter source code before analyzing.'); return }
-    setLoading(true)
-    try { setAnalysis(await analyzeCode(selectedLanguage, source)) }
-    catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'Analysis failed.') }
-    finally { setLoading(false) }
+  function updateGeneratedSource(value: string) {
+    setGeneratedSource(value); setGeneratedAnalysis(null); setGeneratedError(''); setGeneratedEdited(Boolean(generatedOrigin)); setShowComparison(false); generatedRequest.current += 1
+  }
+
+  function updateGeneratedLanguage(value: string) {
+    setGeneratedLanguage(value); setGeneratedAnalysis(null); setGeneratedError(''); setShowComparison(false); generatedRequest.current += 1
+  }
+
+  async function handleAnalyzeOriginal() {
+    if (!originalSource.trim()) { setOriginalError('Enter source code before analyzing.'); return }
+    const requestId = ++originalRequest.current
+    const submittedSource = originalSource; const submittedLanguage = originalLanguage
+    setOriginalLoading(true); setOriginalError(''); setOriginalAnalysis(null)
+    try {
+      const result = await analyzeCode(submittedLanguage, submittedSource)
+      if (originalRequest.current === requestId && originalSource === submittedSource && originalLanguage === submittedLanguage) setOriginalAnalysis({ result, source: submittedSource, language: submittedLanguage })
+    } catch (requestError) { if (originalRequest.current === requestId) setOriginalError(requestError instanceof Error ? requestError.message : 'Analysis failed.') }
+    finally { if (originalRequest.current === requestId) setOriginalLoading(false) }
+  }
+
+  async function handleAnalyzeGenerated() {
+    if (!generatedSource.trim()) { setGeneratedError('Generate or enter code before analyzing.'); return }
+    const requestId = ++generatedRequest.current
+    const submittedSource = generatedSource; const submittedLanguage = generatedLanguage
+    setGeneratedLoading(true); setGeneratedError(''); setGeneratedAnalysis(null)
+    try {
+      const result = await analyzeCode(submittedLanguage, submittedSource)
+      if (generatedRequest.current === requestId && generatedSource === submittedSource && generatedLanguage === submittedLanguage) setGeneratedAnalysis({ result, source: submittedSource, language: submittedLanguage })
+    } catch (requestError) { if (generatedRequest.current === requestId) setGeneratedError(requestError instanceof Error ? requestError.message : 'Generated-code analysis failed.') }
+    finally { if (generatedRequest.current === requestId) setGeneratedLoading(false) }
   }
 
   async function handleGenerateAlternative() {
-    if (!source.trim()) { setGenerationError('Enter source code before generating an alternative.'); return }
+    if (!originalSource.trim()) { setGenerationError('Enter source code before generating an alternative.'); return }
     const requestId = ++generationRequest.current
-    const submittedSource = source
-    const submittedLanguage = selectedLanguage
-    setGenerationLoading(true)
-    setGenerationError('')
-    setAlternative(null)
-    setCopyStatus('')
+    const submittedSource = originalSource; const submittedLanguage = originalLanguage
+    setGenerationLoading(true); setGenerationError(''); setCopyStatus(''); setEditorNotice('')
     try {
       const result = await generateAlternative(submittedLanguage, submittedSource)
-      if (generationRequest.current === requestId && source === submittedSource && selectedLanguage === submittedLanguage) setAlternative(result)
-    } catch (requestError) {
-      if (generationRequest.current === requestId) setGenerationError(requestError instanceof Error ? requestError.message : 'Alternative generation failed.')
-    } finally {
-      if (generationRequest.current === requestId) setGenerationLoading(false)
-    }
+      if (generationRequest.current === requestId && originalSource === submittedSource && originalLanguage === submittedLanguage) {
+        setAlternative(result); setGeneratedSource(result.generated_code); setGeneratedLanguage(result.language); setGeneratedOrigin({ source: submittedSource, language: submittedLanguage }); setGeneratedEdited(false); setGeneratedAnalysis(null); setGeneratedError(''); setShowComparison(false)
+      }
+    } catch (requestError) { if (generationRequest.current === requestId) setGenerationError(requestError instanceof Error ? requestError.message : 'Alternative generation failed.') }
+    finally { if (generationRequest.current === requestId) setGenerationLoading(false) }
+  }
+
+  function clearGenerated() {
+    generationRequest.current += 1; generatedRequest.current += 1; setAlternative(null); setGeneratedSource(''); setGeneratedAnalysis(null); setGeneratedOrigin(null); setGeneratedEdited(false); setGeneratedError(''); setGenerationError(''); setCopyStatus(''); setShowComparison(false)
   }
 
   async function copyAlternative(code: string) {
-    try {
-      await navigator.clipboard.writeText(code)
-      setCopyStatus('Copied')
-    } catch {
-      setCopyStatus('Copy failed; select the code manually.')
-    }
-  }
-
-  function useAlternative(code: string) {
-    updateSource(code)
-    setEditorNotice('Groq alternative placed in the editor. Run Analyze program to validate it.')
+    try { await navigator.clipboard.writeText(code); setCopyStatus('Copied') } catch { setCopyStatus('Copy failed; select the code manually.') }
   }
 
   function inspectToken(token: AnalysisResult['tokens'][number]) {
     const selection = mapTokenToDfa(token)
-    if (!selection) {
-      setSelectedToken(null)
-      setTokenNotice(tokenDfaUnavailableReason(token))
-      return
-    }
-    setSelectedToken(selection)
-    setTokenNotice('')
-    setActiveView('automata')
+    if (!selection) { setSelectedToken(null); setTokenNotice(tokenDfaUnavailableReason(token)); return }
+    setSelectedToken(selection); setTokenNotice(''); setActiveView('automata')
   }
 
-  function locateDiagnostic(diagnostic: Diagnostic) {
+  function locateDiagnostic(diagnostic: Diagnostic, source: string, sourceRef: RefObject<HTMLTextAreaElement | null>) {
     if (!diagnostic.line) return
     const linesBefore = source.split('\n').slice(0, diagnostic.line - 1).join('\n')
     const lineStart = linesBefore.length + (diagnostic.line > 1 ? 1 : 0)
     const lineText = source.split('\n')[diagnostic.line - 1] ?? ''
     const columnOffset = Math.max((diagnostic.column ?? 1) - 1, 0)
-    sourceRef.current?.focus()
-    sourceRef.current?.setSelectionRange(lineStart + Math.min(columnOffset, lineText.length), lineStart + lineText.length)
-    setActiveLine(diagnostic.line)
+    sourceRef.current?.focus(); sourceRef.current?.setSelectionRange(lineStart + Math.min(columnOffset, lineText.length), lineStart + lineText.length)
   }
 
+  const originalCurrent = isCurrent(originalAnalysis, originalSource, originalLanguage)
+  const generatedCurrent = isCurrent(generatedAnalysis, generatedSource, generatedLanguage)
+  const languagesMatch = originalLanguage === generatedLanguage
+  const canCompare = originalCurrent && generatedCurrent && languagesMatch
+  const comparison = useMemo(() => canCompare ? buildComparison(originalAnalysis.result, generatedAnalysis.result, originalSource, generatedSource) : null, [canCompare, originalAnalysis, generatedAnalysis, originalSource, generatedSource])
+  const relationshipStale = Boolean(generatedOrigin && (generatedOrigin.source !== originalSource || generatedOrigin.language !== originalLanguage))
+
   return <main className="app-shell">
-    <header className="hero"><div><p className="eyebrow">CODE ANALYSIS WORKSPACE</p><h1>CodeLens AI</h1><p className="subtitle">Multi-Language Analyzer for Mini Python and Mini C</p></div><div className={`connection connection-${connection}`} role="status"><span className="status-dot" />{connection === 'checking' ? 'Checking backend…' : connection === 'connected' ? 'Backend connected' : 'Backend unavailable'}</div></header>
-    <nav className="workspace-nav" aria-label="Workspace sections" role="tablist"><button type="button" role="tab" aria-selected={activeView === 'analyzer'} className={activeView === 'analyzer' ? 'active-tab' : ''} onClick={() => setActiveView('analyzer')}>Code Analyzer</button><button type="button" role="tab" aria-selected={activeView === 'automata'} className={activeView === 'automata' ? 'active-tab' : ''} onClick={() => setActiveView('automata')}>Automata Lab</button></nav>
+    <header className="hero"><div><p className="eyebrow">CODE ANALYSIS WORKSPACE</p><h1>CodeLens AI</h1><p className="subtitle">Dual validation for Mini Python and Mini C</p></div><div className={`connection connection-${connection}`} role="status"><span className="status-dot" />{connection === 'checking' ? 'Checking backend…' : connection === 'connected' ? 'Backend connected' : 'Backend unavailable'}</div></header>
+    <nav className="workspace-nav" aria-label="Workspace sections" role="tablist"><button type="button" role="tab" aria-selected={activeView === 'analyzer'} className={activeView === 'analyzer' ? 'active-tab' : ''} onClick={() => setActiveView('analyzer')}>Dual Analyzer</button><button type="button" role="tab" aria-selected={activeView === 'automata'} className={activeView === 'automata' ? 'active-tab' : ''} onClick={() => setActiveView('automata')}>Automata Lab</button></nav>
     {activeView === 'analyzer' && <>
-    <section className="workspace-card" aria-labelledby="workspace-heading">
-      <div className="section-heading"><div><p className="eyebrow">SOURCE INPUT</p><h2 id="workspace-heading">Analyze a program</h2></div><label>Language<select value={selectedLanguage} onChange={(event) => updateLanguage(event.target.value)}>{languages.length > 0 ? languages.map((language) => <option key={language.id} value={language.id}>{language.name}</option>) : <><option value="mini_python">Mini Python</option><option value="mini_c">Mini C</option></>}</select></label></div>
-      <label className="editor-label" htmlFor="source-code">Original code</label>
-      <div className="editor-shell"><div className="line-gutter" aria-hidden="true">{Array.from({ length: lineCount }, (_, index) => { const line = index + 1; return <span className={activeLine === line ? 'active-line' : ''} key={line}>{line}</span> })}</div><textarea ref={sourceRef} id="source-code" value={source} onChange={(event) => updateSource(event.target.value)} placeholder="Paste Mini Python or Mini C source here…" spellCheck={false} /></div>
-      <div className="action-row"><button type="button" onClick={handleAnalyze} disabled={loading}>{loading ? 'Analyzing…' : 'Analyze program'}</button><span className="scope-note">Syntax analysis only. Submitted code is never executed.</span></div>
-      {error && <p className="error-message" role="alert">{error}</p>}{editorNotice && <p className="editor-notice" role="status">{editorNotice}</p>}
-    </section>
-    {loading && <div className="loading-card" role="status">Analyzing {selectedLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source…</div>}
-    {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
-    {!analysis && !loading && <div className="empty-results"><strong>Results are waiting</strong><span>Run the analyzer to view tokens, diagnostics, and the parse tree.</span></div>}
-    {alternative ? <AlternativePanel alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onUse={useAlternative} /> : <section className="ai-placeholder"><div><p className="eyebrow">AI ALTERNATIVE</p><h2>Groq AI Alternative</h2><p>Generate a separate educational implementation with Groq. It will not replace your source or analysis results.</p>{generationError && <p className="error-message" role="alert">{generationError}</p>}{generationLoading && <p className="generation-status" role="status">Generating with Groq…</p>}</div><button type="button" className="secondary-button" onClick={handleGenerateAlternative} disabled={generationLoading}>{generationLoading ? 'Generating…' : 'Generate Alternative'}</button></section>}
+      <section className="workflow-intro"><strong>Analyze, validate, compare</strong><span>Groq-generated code is placed in Editor B automatically. Both editors use the deterministic analyzer independently.</span></section>
+      <div className="dual-editors">
+        <CodeEditorPanel kind="original" source={originalSource} language={originalLanguage} languages={languages} loading={originalLoading} error={originalError} valid={originalCurrent ? originalAnalysis.result.success : null} edited={false} relationshipStale={false} onSourceChange={updateOriginalSource} onLanguageChange={updateOriginalLanguage} onAnalyze={handleAnalyzeOriginal} sourceRef={originalSourceRef} />
+        <CodeEditorPanel kind="generated" source={generatedSource} language={generatedLanguage} languages={languages} loading={generatedLoading || generationLoading} error={generatedError || generationError} valid={generatedCurrent ? generatedAnalysis.result.success : null} edited={generatedEdited} relationshipStale={relationshipStale} onSourceChange={updateGeneratedSource} onLanguageChange={updateGeneratedLanguage} onAnalyze={handleAnalyzeGenerated} onGenerate={handleGenerateAlternative} onClear={clearGenerated} sourceRef={generatedSourceRef} />
+      </div>
+      <div className="generation-note">{alternative ? <AlternativePanel alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onUse={() => { generatedSourceRef.current?.focus(); setEditorNotice('Generated code is ready in Editor B. Validate it independently before comparing.') }} /> : <div className="ai-placeholder"><div><p className="eyebrow">GROQ GENERATION</p><h2>Generate an alternative</h2><p>Generate a separate educational implementation from the original source. Editor A will never be overwritten.</p></div><button type="button" className="secondary-button" onClick={handleGenerateAlternative} disabled={generationLoading}>{generationLoading ? 'Generating…' : 'Generate Alternative'}</button></div>}{editorNotice && <p className="editor-notice" role="status">{editorNotice}</p>}</div>
+      {originalCurrent && <AnalysisResults title="Original Analysis Output" analysis={originalAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, originalSource, originalSourceRef)} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
+      {generatedCurrent && <AnalysisResults title="Generated Analysis Output" analysis={generatedAnalysis.result} onLocate={(diagnostic) => locateDiagnostic(diagnostic, generatedSource, generatedSourceRef)} />}
+      <section className="comparison-section" aria-labelledby="comparison-action-heading"><div className="comparison-action"><div><p className="eyebrow">COMPARE RESULTS</p><h2 id="comparison-action-heading">Original versus generated</h2><p>{canCompare ? 'Both current analysis results are ready.' : !generatedSource ? 'Generate or enter code in Editor B, then validate both sides.' : !originalCurrent || !generatedCurrent ? 'Validate both current source versions to enable comparison.' : 'The languages must match before comparison.'}</p></div><div className="comparison-controls"><span className="pill">{canCompare ? 'Ready' : 'Waiting for current results'}</span><button type="button" onClick={() => setShowComparison(true)} disabled={!canCompare}>Compare Results</button></div></div>{showComparison && comparison && <ComparisonReport report={comparison} language={originalLanguage} />}</section>
     </>}
     {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} />}
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
   </main>
 }
 
-function AnalysisResults({ analysis, onLocate, onInspectToken, tokenNotice }: { analysis: AnalysisResult; onLocate: (diagnostic: Diagnostic) => void; onInspectToken: (token: AnalysisResult['tokens'][number]) => void; tokenNotice: string }) {
+function AnalysisResults({ title, analysis, onLocate, onInspectToken, tokenNotice }: { title: string; analysis: AnalysisResult; onLocate: (diagnostic: Diagnostic) => void; onInspectToken?: (token: AnalysisResult['tokens'][number]) => void; tokenNotice?: string }) {
   const lexicalDiagnostics = useMemo(() => analysis.diagnostics.filter((diagnostic) => lexicalCodes.has(diagnostic.code)), [analysis.diagnostics])
   const syntaxDiagnostics = useMemo(() => analysis.diagnostics.filter((diagnostic) => !lexicalCodes.has(diagnostic.code)), [analysis.diagnostics])
   const warningCount = analysis.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning').length
-  return <section className="analysis-results" aria-label="Analysis results">
-    <div className={`analysis-status ${analysis.success ? 'success' : 'failure'}`}><div><strong>{analysis.success ? 'Analysis valid' : 'Issues found'}</strong><span>{analysis.language === 'mini_python' ? 'Mini Python' : 'Mini C'} · {analysis.grammar_version}</span></div><span>{analysis.success ? 'No error-level diagnostics' : `${analysis.diagnostics.length} diagnostic${analysis.diagnostics.length === 1 ? '' : 's'}`}</span></div>
-    <div className="summary-row"><span><strong>{analysis.tokens.length}</strong> tokens</span><span><strong>{lexicalDiagnostics.length}</strong> lexical</span><span><strong>{syntaxDiagnostics.length}</strong> syntax</span><span><strong>{warningCount}</strong> warnings</span></div>
-    <div className="results-grid analysis-grid"><TokenPanel tokens={analysis.tokens} onInspectToken={onInspectToken} tokenNotice={tokenNotice} /><DiagnosticPanel title="Lexical diagnostics" diagnostics={lexicalDiagnostics} onLocate={onLocate} /><DiagnosticPanel title="Syntax diagnostics" diagnostics={syntaxDiagnostics} onLocate={onLocate} /><AstPanel tree={analysis.tree} /></div>
-  </section>
+  return <section className="analysis-results" aria-label={title}><div className="analysis-output-heading"><div><p className="eyebrow">VALIDATION RESULTS</p><h2>{title}</h2></div><span className={`validation-pill ${analysis.success ? 'valid' : 'invalid'}`}>{analysis.success ? 'All checks passed' : 'Issues found'}</span></div><div className={`analysis-status ${analysis.success ? 'success' : 'failure'}`}><div><strong>{analysis.success ? 'Analysis valid' : 'Issues found'}</strong><span>{analysis.language === 'mini_python' ? 'Mini Python' : 'Mini C'} · {analysis.grammar_version}</span></div><span>{analysis.success ? 'No error-level diagnostics' : `${analysis.diagnostics.length} diagnostic${analysis.diagnostics.length === 1 ? '' : 's'}`}</span></div><div className="summary-row"><span><strong>{analysis.tokens.length}</strong> tokens</span><span><strong>{lexicalDiagnostics.length}</strong> lexical</span><span><strong>{syntaxDiagnostics.length}</strong> syntax</span><span><strong>{warningCount}</strong> warnings</span></div><div className="results-grid analysis-grid"><TokenPanel tokens={analysis.tokens} onInspectToken={onInspectToken} tokenNotice={tokenNotice ?? ''} /><DiagnosticPanel title="Lexical diagnostics" diagnostics={lexicalDiagnostics} onLocate={onLocate} /><DiagnosticPanel title="Syntax diagnostics" diagnostics={syntaxDiagnostics} onLocate={onLocate} /><AstPanel tree={analysis.tree} /></div><p className="analysis-limit">Static analysis only. This output does not execute the source or establish runtime behavior.</p></section>
 }
 
-function TokenPanel({ tokens, onInspectToken, tokenNotice }: { tokens: AnalysisResult['tokens']; onInspectToken: (token: AnalysisResult['tokens'][number]) => void; tokenNotice: string }) {
-  return <article className="result-panel token-panel"><h3>Token stream <span>{tokens.length}</span></h3><div className="table-scroll"><table><thead><tr><th>Type</th><th>Lexeme</th><th>Location</th></tr></thead><tbody>{tokens.map((token, index) => { const selection = mapTokenToDfa(token); const unavailableReason = tokenDfaUnavailableReason(token); return <tr key={`${token.type}-${index}`}><td>{token.type}</td><td>{selection ? <button type="button" className="token-inspect" onClick={() => onInspectToken(token)} title="Inspect token with DFA" aria-label={`Inspect ${token.lexeme || token.type} token with DFA`}><code>{token.lexeme || '∅'}</code></button> : <code title={unavailableReason}>{token.lexeme || '∅'}</code>}</td><td>{token.line}:{token.column}{selection ? <span className="token-action-hint"> · DFA</span> : <span className="token-unavailable" title={unavailableReason}> · no matching DFA</span>}</td></tr> })}</tbody></table></div>{tokenNotice && <p className="token-notice" role="status">{tokenNotice}</p>}<p className="token-help">Only validated identifier, integer, arithmetic-operator, and relational-operator lexemes can be inspected with the educational DFAs.</p></article>
+function TokenPanel({ tokens, onInspectToken, tokenNotice }: { tokens: AnalysisResult['tokens']; onInspectToken?: (token: AnalysisResult['tokens'][number]) => void; tokenNotice: string }) {
+  return <article className="result-panel token-panel"><h3>Token stream <span>{tokens.length}</span></h3><div className="table-scroll"><table><thead><tr><th>Type</th><th>Lexeme</th><th>Location</th></tr></thead><tbody>{tokens.map((token, index) => { const selection = mapTokenToDfa(token); const unavailableReason = tokenDfaUnavailableReason(token); return <tr key={`${token.type}-${index}`}><td>{token.type}</td><td>{selection && onInspectToken ? <button type="button" className="token-inspect" onClick={() => onInspectToken(token)} title="Inspect token with DFA" aria-label={`Inspect ${token.lexeme || token.type} token with DFA`}><code>{token.lexeme || '∅'}</code></button> : <code title={unavailableReason}>{token.lexeme || '∅'}</code>}</td><td>{token.line}:{token.column}{selection && onInspectToken ? <span className="token-action-hint"> · DFA</span> : <span className="token-unavailable"> · static</span>}</td></tr> })}</tbody></table></div>{tokenNotice && <p className="token-notice" role="status">{tokenNotice}</p>}<p className="token-help">{onInspectToken ? 'Validated eligible lexemes can be inspected with the educational DFAs.' : 'Generated tokens are independently analyzed; DFA navigation remains available from the original token stream.'}</p></article>
 }
 
 function DiagnosticPanel({ title, diagnostics, onLocate }: { title: string; diagnostics: Diagnostic[]; onLocate: (diagnostic: Diagnostic) => void }) {
