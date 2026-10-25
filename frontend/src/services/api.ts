@@ -13,6 +13,7 @@ export type AutomatonTransition = { from: string; to: string; label: string; mat
 export type AutomatonDefinition = { id: string; name: string; description: string; pattern: string; start_state: string; accepting_states: string[]; states: AutomatonState[]; transitions: AutomatonTransition[]; examples?: { accepted: string[]; rejected: string[] } }
 export type AutomatonTraceStep = { step: number; index: number; character: string; current_state: string; transition: string; next_state: string; accepted: boolean }
 export type AutomatonSimulation = { automaton_id: string; input: string; trace: AutomatonTraceStep[]; final_state: string; accepted: boolean; characters_processed: number; failed_transition: { index: number; character: string; from_state: string; to_state: string; transition: string } | null; explanation: string }
+export type AlternativeGeneration = { language: 'mini_python' | 'mini_c'; generated_code: string; provider: 'grok'; model: string }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -58,4 +59,14 @@ export async function simulateAutomaton(id: string, input: string): Promise<Auto
   const response = await fetch(`${apiBaseUrl}/api/automata/${id}/simulate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input }) })
   if (!response.ok) throw new Error(`Automaton simulation failed (${response.status})`)
   return response.json() as Promise<AutomatonSimulation>
+}
+
+export async function generateAlternative(language: string, sourceCode: string): Promise<AlternativeGeneration> {
+  const response = await fetch(`${apiBaseUrl}/api/generate-alternative`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language, source_code: sourceCode }) })
+  if (!response.ok) {
+    let detail = `Alternative generation failed (${response.status})`
+    try { const body = await response.json() as { detail?: string }; if (body.detail) detail = body.detail } catch { /* Preserve the status error. */ }
+    throw new Error(detail)
+  }
+  return response.json() as Promise<AlternativeGeneration>
 }

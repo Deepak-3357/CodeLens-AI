@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.languages.mini_python.analyzer import analyze_mini_python
 from app.languages.mini_c.analyzer import analyze_mini_c
 from app.automata import MAX_AUTOMATA_INPUT, get_automaton, list_automata, simulate
+from app.ai_provider import AIProviderError, GrokProvider, MAX_SOURCE_LENGTH, SUPPORTED_LANGUAGES
 
 load_dotenv()
 
@@ -65,6 +66,18 @@ class AnalysisResponse(BaseModel):
 
 class AutomataSimulationRequest(BaseModel):
     input: str = Field(max_length=MAX_AUTOMATA_INPUT)
+
+
+class GenerateAlternativeRequest(BaseModel):
+    language: str
+    source_code: str = Field(max_length=MAX_SOURCE_LENGTH)
+
+
+class GenerateAlternativeResponse(BaseModel):
+    language: str
+    generated_code: str
+    provider: str
+    model: str
 
 
 def configured_origins() -> list[str]:
@@ -132,3 +145,21 @@ def automaton_simulate(automaton_id: str, request: AutomataSimulationRequest) ->
     if definition is None:
         raise HTTPException(status_code=404, detail="Unknown automaton.")
     return simulate(definition, request.input)
+
+
+@app.post("/api/generate-alternative", response_model=GenerateAlternativeResponse)
+def generate_alternative(request: GenerateAlternativeRequest) -> GenerateAlternativeResponse:
+    if request.language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Unsupported language. Choose mini_python or mini_c.")
+    if not request.source_code.strip():
+        raise HTTPException(status_code=422, detail="Source code must not be blank.")
+    try:
+        generated_code, model = GrokProvider().generate(request.language, request.source_code)
+    except AIProviderError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    return GenerateAlternativeResponse(
+        language=request.language,
+        generated_code=generated_code,
+        provider="grok",
+        model=model,
+    )

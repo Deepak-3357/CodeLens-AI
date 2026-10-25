@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { analyzeCode, getHealth, getLanguages, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
+import { analyzeCode, generateAlternative, getHealth, getLanguages, type AlternativeGeneration, type AnalysisResult, type Diagnostic, type Language, type ParseNode } from './services/api'
 import AutomataLab from './components/AutomataLab'
+import AlternativePanel from './components/AlternativePanel'
 import { mapTokenToDfa, tokenDfaUnavailableReason, type TokenDfaSelection } from './services/tokenDfa'
 
 const lexicalCodes = new Set(['PY_INVALID_CHARACTER', 'PY_MALFORMED_NUMBER', 'PY_UNTERMINATED_STRING', 'PY_INDENT_TAB', 'PY_INCONSISTENT_DEDENT', 'C_INVALID_CHARACTER', 'C_MALFORMED_NUMBER', 'C_UNTERMINATED_STRING', 'C_UNTERMINATED_CHARACTER', 'C_INVALID_CHARACTER_LITERAL', 'C_UNTERMINATED_COMMENT'])
@@ -17,6 +18,12 @@ function App() {
   const [activeView, setActiveView] = useState<'analyzer' | 'automata'>('analyzer')
   const [selectedToken, setSelectedToken] = useState<TokenDfaSelection | null>(null)
   const [tokenNotice, setTokenNotice] = useState('')
+  const [alternative, setAlternative] = useState<AlternativeGeneration | null>(null)
+  const [generationLoading, setGenerationLoading] = useState(false)
+  const [generationError, setGenerationError] = useState('')
+  const [copyStatus, setCopyStatus] = useState('')
+  const [editorNotice, setEditorNotice] = useState('')
+  const generationRequest = useRef(0)
   const sourceRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -34,6 +41,12 @@ function App() {
     setError('')
     setSelectedToken(null)
     setTokenNotice('')
+    generationRequest.current += 1
+    setAlternative(null)
+    setGenerationLoading(false)
+    setGenerationError('')
+    setCopyStatus('')
+    setEditorNotice('')
   }
 
   function updateLanguage(value: string) {
@@ -43,6 +56,12 @@ function App() {
     setError('')
     setSelectedToken(null)
     setTokenNotice('')
+    generationRequest.current += 1
+    setAlternative(null)
+    setGenerationLoading(false)
+    setGenerationError('')
+    setCopyStatus('')
+    setEditorNotice('')
   }
 
   async function handleAnalyze() {
@@ -51,11 +70,45 @@ function App() {
     setActiveLine(null)
     setSelectedToken(null)
     setTokenNotice('')
+    setEditorNotice('')
     if (!source.trim()) { setError('Enter source code before analyzing.'); return }
     setLoading(true)
     try { setAnalysis(await analyzeCode(selectedLanguage, source)) }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'Analysis failed.') }
     finally { setLoading(false) }
+  }
+
+  async function handleGenerateAlternative() {
+    if (!source.trim()) { setGenerationError('Enter source code before generating an alternative.'); return }
+    const requestId = ++generationRequest.current
+    const submittedSource = source
+    const submittedLanguage = selectedLanguage
+    setGenerationLoading(true)
+    setGenerationError('')
+    setAlternative(null)
+    setCopyStatus('')
+    try {
+      const result = await generateAlternative(submittedLanguage, submittedSource)
+      if (generationRequest.current === requestId && source === submittedSource && selectedLanguage === submittedLanguage) setAlternative(result)
+    } catch (requestError) {
+      if (generationRequest.current === requestId) setGenerationError(requestError instanceof Error ? requestError.message : 'Alternative generation failed.')
+    } finally {
+      if (generationRequest.current === requestId) setGenerationLoading(false)
+    }
+  }
+
+  async function copyAlternative(code: string) {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopyStatus('Copied')
+    } catch {
+      setCopyStatus('Copy failed; select the code manually.')
+    }
+  }
+
+  function useAlternative(code: string) {
+    updateSource(code)
+    setEditorNotice('Grok alternative placed in the editor. Run Analyze program to validate it.')
   }
 
   function inspectToken(token: AnalysisResult['tokens'][number]) {
@@ -90,12 +143,12 @@ function App() {
       <label className="editor-label" htmlFor="source-code">Original code</label>
       <div className="editor-shell"><div className="line-gutter" aria-hidden="true">{Array.from({ length: lineCount }, (_, index) => { const line = index + 1; return <span className={activeLine === line ? 'active-line' : ''} key={line}>{line}</span> })}</div><textarea ref={sourceRef} id="source-code" value={source} onChange={(event) => updateSource(event.target.value)} placeholder="Paste Mini Python or Mini C source here…" spellCheck={false} /></div>
       <div className="action-row"><button type="button" onClick={handleAnalyze} disabled={loading}>{loading ? 'Analyzing…' : 'Analyze program'}</button><span className="scope-note">Syntax analysis only. Submitted code is never executed.</span></div>
-      {error && <p className="error-message" role="alert">{error}</p>}
+      {error && <p className="error-message" role="alert">{error}</p>}{editorNotice && <p className="editor-notice" role="status">{editorNotice}</p>}
     </section>
     {loading && <div className="loading-card" role="status">Analyzing {selectedLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source…</div>}
     {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
     {!analysis && !loading && <div className="empty-results"><strong>Results are waiting</strong><span>Run the analyzer to view tokens, diagnostics, and the parse tree.</span></div>}
-    <section className="ai-placeholder"><div><p className="eyebrow">PLANNED FEATURES</p><h2>AI alternatives and comparison</h2><p>AI-assisted alternative generation and evidence-based comparison are planned for a later phase. They are not enabled.</p></div><span className="pill">Not enabled</span></section>
+    {alternative ? <AlternativePanel alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onUse={useAlternative} /> : <section className="ai-placeholder"><div><p className="eyebrow">AI ALTERNATIVE</p><h2>Grok AI Alternative</h2><p>Generate a separate educational implementation with Grok. It will not replace your source or analysis results.</p>{generationError && <p className="error-message" role="alert">{generationError}</p>}{generationLoading && <p className="generation-status" role="status">Generating with Grok…</p>}</div><button type="button" className="secondary-button" onClick={handleGenerateAlternative} disabled={generationLoading}>{generationLoading ? 'Generating…' : 'Generate Alternative'}</button></section>}
     </>}
     {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} />}
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
