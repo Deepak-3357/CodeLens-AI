@@ -60,6 +60,8 @@ def test_invalid_program_has_diagnostic_and_no_success() -> None:
     result = analyze_mini_python("print(1 + 2\n")
     assert not result["success"]
     assert any(item["code"] == "PY_EXPECTED_TOKEN" for item in result["diagnostics"])
+    assert result["parse_status"] == "invalid_partial"
+    assert result["tree_complete"] is False
 
 
 def test_missing_assignment_expression_is_explicitly_incomplete() -> None:
@@ -113,5 +115,7 @@ def test_empty_and_unsupported_input() -> None:
     empty = analyze_mini_python("")
     assert not empty["success"]
     assert any(item["code"] == "PY_EMPTY_SOURCE" for item in empty["diagnostics"])
+    assert empty["parse_status"] == "invalid_no_tree"
+    assert empty["tree_complete"] is False
     unsupported = analyze_mini_python("for x in y:\n    print(x)\n")
     assert not unsupported["success"]

@@ -12,6 +12,8 @@ function analysis(overrides: Partial<AnalysisResult> = {}): AnalysisResult {
     tokens: [],
     diagnostics: [],
     tree: { type: 'Program', children: [] },
+    parse_status: 'valid_complete',
+    tree_complete: true,
     summary: { token_count: 0, diagnostic_count: 0 },
     ...overrides,
   }
@@ -65,6 +67,27 @@ describe('comparison diagnostics and structure', () => {
     expect(different.astStructureEqual).toBe(false)
     expect(different.original.success).toBe(true)
     expect(different.generated.success).toBe(true)
-    expect(buildComparison(analysis({ tree: null }), analysis(), '', '').astAvailable).toBe(false)
+    expect(buildComparison(analysis({ tree: null, parse_status: 'invalid_no_tree', tree_complete: false, success: false, syntax_valid: false }), analysis(), '', '').astAvailable).toBe(false)
+  })
+
+  it('limits AST comparison when either analysis is invalid while preserving other comparisons', () => {
+    const invalid = analysis({ success: false, syntax_valid: false, parse_status: 'invalid_partial', tree_complete: false, diagnostics: [{ severity: 'error', code: 'PY_EXPECTED_TOKEN', message: "Expected )", line: 1, column: 1, end_line: 1, end_column: 2 }] })
+    const valid = analysis()
+    const originalInvalid = buildComparison(invalid, valid, 'print(1', 'print(1)', { originalCurrent: true, generatedCurrent: true, languagesMatch: true })
+    const generatedInvalid = buildComparison(valid, invalid, 'print(1)', 'print(1', { originalCurrent: true, generatedCurrent: true, languagesMatch: true })
+    const bothInvalid = buildComparison(invalid, invalid, 'x', 'y', { originalCurrent: true, generatedCurrent: true, languagesMatch: true })
+    expect(originalInvalid.astComparison.message).toBe('Structural comparison limited — original source has syntax errors.')
+    expect(generatedInvalid.astComparison.message).toBe('Structural comparison limited — generated source has syntax errors.')
+    expect(bothInvalid.astComparison.message).toBe('Structural comparison limited — both sources have analysis errors.')
+    expect(originalInvalid.astComparison.comparable).toBe(false)
+    expect(originalInvalid.tokenSequenceEqual).toBe(true)
+  })
+
+  it('handles missing, stale, and language-mismatched comparison context', () => {
+    const original = analysis()
+    const generated = analysis()
+    expect(buildComparison(original, generated, '', '', { originalAnalyzed: false, generatedAnalyzed: true }).astComparison.message).toBe('Analyze both programs before comparing AST structures.')
+    expect(buildComparison(original, generated, '', '', { originalCurrent: false, generatedCurrent: true, languagesMatch: true }).astComparison.message).toBe('Re-analyze the modified source before comparing.')
+    expect(buildComparison(original, generated, '', '', { originalCurrent: true, generatedCurrent: true, languagesMatch: false }).astComparison.message).toBe('Choose the same language for both editors before comparing.')
   })
 })

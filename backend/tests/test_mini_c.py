@@ -53,6 +53,8 @@ def test_missing_semicolon_is_incomplete() -> None:
     assert not result["success"]
     assert any(item["code"] == "C_EXPECTED_TOKEN" for item in result["diagnostics"])
     assert result["tree"]["children"][0]["attributes"]["incomplete"] is True
+    assert result["parse_status"] == "invalid_partial"
+    assert result["tree_complete"] is False
 
 
 def test_missing_initializer_and_invalid_operator_recover() -> None:
@@ -86,6 +88,9 @@ def test_delimiters_and_literals_diagnose() -> None:
 
 
 def test_empty_and_unsupported_input() -> None:
-    assert any(item["code"] == "C_EMPTY_SOURCE" for item in analyze_mini_c("")["diagnostics"])
+    empty = analyze_mini_c("")
+    assert any(item["code"] == "C_EMPTY_SOURCE" for item in empty["diagnostics"])
+    assert empty["parse_status"] == "invalid_no_tree"
+    assert empty["tree_complete"] is False
     result = analyze_mini_c("for (int i = 0; i < 3; i = i + 1) { }")
     assert not result["success"]

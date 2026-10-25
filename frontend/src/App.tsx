@@ -130,7 +130,7 @@ function App() {
   const generatedCurrent = isCurrent(generatedAnalysis, generatedSource, generatedLanguage)
   const languagesMatch = originalLanguage === generatedLanguage
   const canCompare = originalCurrent && generatedCurrent && languagesMatch
-  const comparison = useMemo(() => canCompare ? buildComparison(originalAnalysis.result, generatedAnalysis.result, originalSource, generatedSource) : null, [canCompare, originalAnalysis, generatedAnalysis, originalSource, generatedSource])
+  const comparison = useMemo(() => canCompare ? buildComparison(originalAnalysis.result, generatedAnalysis.result, originalSource, generatedSource, { originalAnalyzed: Boolean(originalAnalysis), generatedAnalyzed: Boolean(generatedAnalysis), originalCurrent, generatedCurrent, languagesMatch }) : null, [canCompare, originalAnalysis, generatedAnalysis, originalSource, generatedSource, originalCurrent, generatedCurrent, languagesMatch])
   const relationshipStale = Boolean(generatedOrigin && (generatedOrigin.source !== originalSource || generatedOrigin.language !== originalLanguage))
 
   return <main className="app-shell">

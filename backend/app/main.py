@@ -62,6 +62,8 @@ class AnalysisResponse(BaseModel):
     diagnostics: list[DiagnosticResponse]
     tree: dict | None
     parse_tree: dict | None = None
+    parse_status: str
+    tree_complete: bool
     summary: dict[str, int]
 
 

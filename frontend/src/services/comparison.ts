@@ -3,6 +3,9 @@ import type { AnalysisResult, Diagnostic, ParseNode, Token } from './api'
 export type DiffLine = { kind: 'same' | 'added' | 'removed'; original?: string; generated?: string; originalEnding?: string; generatedEnding?: string; line: number }
 export type DiagnosticChange = { code: string; message: string; severity: string; count: number }
 export type DiagnosticRow = { code: string; message: string; severity: string; originalCount: number; generatedCount: number; status: 'added' | 'removed' | 'persistent' }
+export type AstComparisonStatus = 'match' | 'different' | 'original_invalid' | 'generated_invalid' | 'both_invalid' | 'missing_analysis' | 'stale' | 'language_mismatch'
+export type AstComparison = { status: AstComparisonStatus; comparable: boolean; structureEqual: boolean | null; message: string }
+export type ComparisonContext = { originalAnalyzed?: boolean; generatedAnalyzed?: boolean; originalCurrent?: boolean; generatedCurrent?: boolean; languagesMatch?: boolean }
 
 export type ComparisonReport = {
   original: AnalysisResult
@@ -12,6 +15,7 @@ export type ComparisonReport = {
   diagnosticCodes: { original: Record<string, number>; generated: Record<string, number>; added: DiagnosticChange[]; removed: DiagnosticChange[]; persistent: DiagnosticChange[]; rows: DiagnosticRow[] }
   astAvailable: boolean
   astStructureEqual: boolean | null
+  astComparison: AstComparison
   sourceDiff: DiffLine[]
 }
 
@@ -116,15 +120,42 @@ function diagnosticChanges(original: Diagnostic[], generated: Diagnostic[]): Com
   }
 }
 
-export function buildComparison(original: AnalysisResult, generated: AnalysisResult, originalSource: string, generatedSource: string): ComparisonReport {
+function analysisHasErrors(analysis: AnalysisResult): boolean {
+  return !analysis.success || !analysis.lexical_valid || !analysis.syntax_valid || analysis.diagnostics.length > 0
+}
+
+function invalidSourceLabel(analysis: AnalysisResult): string {
+  if (!analysis.lexical_valid) return 'lexical errors'
+  if (!analysis.syntax_valid) return 'syntax errors'
+  return 'analysis errors'
+}
+
+function astComparison(original: AnalysisResult, generated: AnalysisResult, context: ComparisonContext = {}): AstComparison {
+  if (context.languagesMatch === false) return { status: 'language_mismatch', comparable: false, structureEqual: null, message: 'Choose the same language for both editors before comparing.' }
+  if (context.originalAnalyzed === false || context.generatedAnalyzed === false) return { status: 'missing_analysis', comparable: false, structureEqual: null, message: 'Analyze both programs before comparing AST structures.' }
+  if (context.originalCurrent === false || context.generatedCurrent === false) return { status: 'stale', comparable: false, structureEqual: null, message: 'Re-analyze the modified source before comparing.' }
+  const originalComplete = original.parse_status === 'valid_complete' && original.tree_complete === true
+  const generatedComplete = generated.parse_status === 'valid_complete' && generated.tree_complete === true
+  const originalInvalid = analysisHasErrors(original) || !originalComplete
+  const generatedInvalid = analysisHasErrors(generated) || !generatedComplete
+  if (originalInvalid && generatedInvalid) return { status: 'both_invalid', comparable: false, structureEqual: null, message: 'Structural comparison limited — both sources have analysis errors.' }
+  if (originalInvalid) return { status: 'original_invalid', comparable: false, structureEqual: null, message: `Structural comparison limited — original source has ${invalidSourceLabel(original)}.` }
+  if (generatedInvalid) return { status: 'generated_invalid', comparable: false, structureEqual: null, message: `Structural comparison limited — generated source has ${invalidSourceLabel(generated)}.` }
+  const equal = JSON.stringify(normalizeTree(original.tree)) === JSON.stringify(normalizeTree(generated.tree))
+  return { status: equal ? 'match' : 'different', comparable: true, structureEqual: equal, message: equal ? 'AST structures match' : 'AST structures differ' }
+}
+
+export function buildComparison(original: AnalysisResult, generated: AnalysisResult, originalSource: string, generatedSource: string, context: ComparisonContext = {}): ComparisonReport {
+  const astResult = astComparison(original, generated, context)
   return {
     original,
     generated,
     tokenTypeCounts: { original: counts(original.tokens.map((token) => token.type)), generated: counts(generated.tokens.map((token) => token.type)) },
     tokenSequenceEqual: original.tokens.map(tokenSignature).join('\u0001') === generated.tokens.map(tokenSignature).join('\u0001'),
     diagnosticCodes: diagnosticChanges(original.diagnostics, generated.diagnostics),
-    astAvailable: Boolean(original.tree && generated.tree),
-    astStructureEqual: original.tree && generated.tree ? JSON.stringify(normalizeTree(original.tree)) === JSON.stringify(normalizeTree(generated.tree)) : null,
+    astAvailable: astResult.comparable,
+    astStructureEqual: astResult.structureEqual,
+    astComparison: astResult,
     sourceDiff: sourceDiff(originalSource, generatedSource),
   }
 }
