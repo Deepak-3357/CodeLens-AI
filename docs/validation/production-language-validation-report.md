@@ -30,7 +30,7 @@ No application source changes were made during this preparation task. The follow
 
 No `.env`, `.env.example`, credential, generated build artifact, or unrelated frontend source change is included in the candidate inventory. `frontend/package.json` has no `typecheck` script; its existing `build` script is `tsc -b && vite build`.
 
-The current branch is `main`, HEAD is `2e5d840 feat: render hierarchical parse tree diagram`, and the branch reports `main...origin/main` with no ahead/behind count. The candidate changes remain uncommitted and unpushed by design.
+The release was committed as `6f69d84 fix: support nested Mini Python and Mini C programs` and pushed successfully to `origin/main`. The branch was not divergent before the push (`0 ahead / 0 behind` after fetching origin). The working tree should be clean after the documentation follow-up commit below.
 
 ### Root-cause assessment
 
@@ -197,7 +197,7 @@ Those results are supplemental only; they do not override the production failure
 Branch: `main`
 HEAD at audit start: `2e5d840 feat: render hierarchical parse tree diagram`
 Working tree: pre-existing modifications in README, Mini Python/C lexer/parser files, parse-tree code, and backend tests; `docs/` is untracked.
-Commit/push/deployment during this audit: **none**.
+Release commit: `6f69d84 fix: support nested Mini Python and Mini C programs`. Push: **PASS** — `origin/main` advanced from `2e5d840` to `6f69d84`. Render deployment: **NOT VERIFIED** — no authorized Render deployment control or deployment log access was available in this workspace. The live backend must not be assumed to contain this commit.
 
 No local screenshot files were produced by the available browser tooling. The report records live browser accessibility evidence instead of inventing screenshot paths.
 
@@ -230,6 +230,14 @@ The deployed site loads, Groq generation currently succeeds, and Automata Lab re
 
 Do not treat local parser success as production success until step 5 passes.
 
+Because Render access was not available, the remaining manual release steps are:
+
+1. In Render, confirm the service is connected to `Deepak-3357/CodeLens-AI`, branch `main`, root directory `backend`, build command `pip install -r requirements.txt`, and start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+2. Trigger or wait for the deployment of commit `6f69d84`; inspect the deployment log for successful dependency installation and Uvicorn startup.
+3. Verify `GET https://codelens-ai-backend-l64a.onrender.com/api/health` returns HTTP 200, then submit the exact required Python and C bodies to `POST /api/analyze` and verify `valid_complete`, `tree_complete=true`, and zero diagnostics.
+4. Open `https://code-lens-ai-phi.vercel.app/`, confirm its bundle still targets the Render URL, and repeat the required pattern, invalid-input, Groq, comparison, and Automata Lab browser checks.
+5. If the deployment fails, use Render's previous successful deployment for rollback; do not force-push or alter secrets.
+
 ## Recommendation
 
-**READY FOR REVIEW** — the existing local parser changes and regression suite are verified, the release inventory is clean of secrets and environment files, and the deployment sequence is defined. Production is not yet ready to declare healthy: the backend revision containing these changes must be deployed and the live pattern checks must pass before release acceptance.
+**NOT READY** — the verified release is committed and pushed, but Render deployment and post-deployment live validation remain unverified. Production must not be declared healthy until the backend reports healthy after deploying `6f69d84` and the exact Python/C API and browser checks pass.
