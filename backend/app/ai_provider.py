@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,8 +10,8 @@ import httpx
 
 
 SUPPORTED_LANGUAGES = {"mini_python", "mini_c"}
-DEFAULT_BASE_URL = "https://api.x.ai/v1"
-DEFAULT_MODEL = "grok-4.7"
+DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_SOURCE_LENGTH = 100_000
 logger = logging.getLogger(__name__)
@@ -36,10 +36,10 @@ class AISettings:
 
     @classmethod
     def from_environment(cls) -> "AISettings":
-        provider = os.getenv("CODELENS_AI_PROVIDER", "grok").strip().lower()
-        api_key = os.getenv("XAI_API_KEY", "").strip()
-        base_url = os.getenv("XAI_API_BASE_URL", DEFAULT_BASE_URL).strip().rstrip("/")
-        model = os.getenv("XAI_MODEL", DEFAULT_MODEL).strip()
+        provider = os.getenv("CODELENS_AI_PROVIDER", "groq").strip().lower()
+        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        base_url = os.getenv("GROQ_API_BASE_URL", DEFAULT_BASE_URL).strip().rstrip("/")
+        model = os.getenv("GROQ_MODEL", DEFAULT_MODEL).strip()
         raw_timeout = os.getenv("CODELENS_AI_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)).strip()
         try:
             timeout_seconds = float(raw_timeout)
@@ -47,12 +47,12 @@ class AISettings:
             raise AIProviderError("AI timeout configuration is invalid.", 503, category="configuration") from exc
         if timeout_seconds <= 0:
             raise AIProviderError("AI timeout configuration must be positive.", 503, category="configuration")
-        if provider != "grok":
-            raise AIProviderError("The configured AI provider is unsupported. Set CODELENS_AI_PROVIDER to grok.", 503, category="configuration")
+        if provider != "groq":
+            raise AIProviderError("The configured AI provider is unsupported. Set CODELENS_AI_PROVIDER to groq.", 503, category="configuration")
         if not api_key:
-            raise AIProviderError("Grok is not configured. Set XAI_API_KEY on the backend.", 503, category="configuration")
+            raise AIProviderError("Groq is not configured. Set GROQ_API_KEY on the backend.", 503, category="configuration")
         if not base_url or not model:
-            raise AIProviderError("Grok configuration is incomplete.", 503, category="configuration")
+            raise AIProviderError("Groq configuration is incomplete.", 503, category="configuration")
         return cls(provider, api_key, base_url, model, timeout_seconds)
 
 
@@ -93,44 +93,39 @@ def generation_user_prompt(source_code: str) -> str:
 
 def normalize_generated_code(raw_output: str) -> str:
     if not isinstance(raw_output, str):
-        raise AIProviderError("Grok returned an invalid generated-code value.", category="malformed_response")
+        raise AIProviderError("Groq returned an invalid generated-code value.", category="malformed_response")
     if not raw_output.strip():
-        raise AIProviderError("Grok returned empty generated code.", category="empty_output")
+        raise AIProviderError("Groq returned empty generated code.", category="empty_output")
 
     output = raw_output
     fence_match = re.fullmatch(r"\s*```[^\r\n]*\r?\n([\s\S]*?)\r?\n?\s*```\s*", output)
     if fence_match:
         output = fence_match.group(1)
     elif "```" in output:
-        raise AIProviderError("Grok returned malformed Markdown fencing.", category="malformed_response")
+        raise AIProviderError("Groq returned malformed Markdown fencing.", category="malformed_response")
 
     output = output.strip("\r\n")
     if not output.strip():
-        raise AIProviderError("Grok returned empty generated code.", category="empty_output")
+        raise AIProviderError("Groq returned empty generated code.", category="empty_output")
     return output
 
 
 def response_text(payload: Any) -> str:
     if not isinstance(payload, dict):
-        raise AIProviderError("Grok returned an unexpected response.", category="malformed_response")
-    output_text = payload.get("output_text")
-    if isinstance(output_text, str) and output_text.strip():
-        return output_text
-    output = payload.get("output")
-    if isinstance(output, list):
-        chunks: list[str] = []
-        for item in output:
-            if not isinstance(item, dict) or item.get("type") != "message":
-                continue
-            content = item.get("content")
-            if not isinstance(content, list):
-                continue
-            for part in content:
-                if isinstance(part, dict) and part.get("type") == "output_text" and isinstance(part.get("text"), str):
-                    chunks.append(part["text"])
-        if chunks:
-            return "".join(chunks)
-    raise AIProviderError("Grok returned no generated text.", category="empty_output")
+        raise AIProviderError("Groq returned an unexpected response.", category="malformed_response")
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise AIProviderError("Groq returned no generated text.", category="empty_output")
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise AIProviderError("Groq returned an unexpected response.", category="malformed_response")
+    message = first_choice.get("message")
+    if not isinstance(message, dict):
+        raise AIProviderError("Groq returned an unexpected response.", category="malformed_response")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise AIProviderError("Groq returned no generated text.", category="empty_output")
+    return content
 
 
 def _safe_provider_text(value: Any) -> str | None:
@@ -161,7 +156,7 @@ def provider_error_details(response: httpx.Response) -> tuple[str | None, str | 
 def raise_logged_provider_error(*, response: httpx.Response, status_code: int, category: str, message: str) -> None:
     provider_code, provider_message = provider_error_details(response)
     logger.warning(
-        "Grok request failed category=%s upstream_status=%s provider_code=%s provider_message=%s",
+        "Groq request failed category=%s upstream_status=%s provider_code=%s provider_message=%s",
         category,
         response.status_code,
         provider_code or "unknown",
@@ -170,69 +165,58 @@ def raise_logged_provider_error(*, response: httpx.Response, status_code: int, c
     raise AIProviderError(message, status_code, category=category, upstream_status=response.status_code, provider_code=provider_code)
 
 
-class GrokProvider:
+class GroqProvider:
     def generate(self, language: str, source_code: str) -> tuple[str, str]:
         settings = AISettings.from_environment()
         payload = {
             "model": settings.model,
-            "input": [
+            "messages": [
                 {"role": "system", "content": generation_system_prompt(language)},
                 {"role": "user", "content": generation_user_prompt(source_code)},
             ],
-            "store": False,
             "temperature": 0.7,
             "top_p": 0.95,
-            "max_output_tokens": 8_000,
+            "max_completion_tokens": 8_000,
+            "stream": False,
         }
         try:
             response = httpx.post(
-                f"{settings.base_url}/responses",
+                f"{settings.base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {settings.api_key}", "Content-Type": "application/json"},
                 json=payload,
                 timeout=httpx.Timeout(settings.timeout_seconds, connect=min(settings.timeout_seconds, 10.0)),
             )
         except httpx.TimeoutException as exc:
-            logger.warning("Grok request failed category=timeout upstream_status=unavailable")
-            raise AIProviderError("Grok request timed out. Try again or increase CODELENS_AI_TIMEOUT_SECONDS.", 504, category="timeout") from exc
+            logger.warning("Groq request failed category=timeout upstream_status=unavailable")
+            raise AIProviderError("Groq request timed out. Try again or increase CODELENS_AI_TIMEOUT_SECONDS.", 504, category="timeout") from exc
         except httpx.RequestError as exc:
-            logger.warning("Grok request failed category=network_error upstream_status=unavailable")
-            raise AIProviderError("Could not connect to Grok. Check the backend provider configuration.", 502, category="network_error") from exc
+            logger.warning("Groq request failed category=network_error upstream_status=unavailable")
+            raise AIProviderError("Could not connect to Groq. Check the backend provider configuration.", 502, category="network_error") from exc
 
         if response.status_code == 400:
-            raise_logged_provider_error(response=response, status_code=400, category="invalid_request", message="Grok rejected the request body.")
+            raise_logged_provider_error(response=response, status_code=400, category="invalid_request", message="Groq rejected the request body.")
         if response.status_code == 401:
-            raise_logged_provider_error(response=response, status_code=401, category="authentication", message="Grok rejected the backend credentials. Check XAI_API_KEY.")
+            raise_logged_provider_error(response=response, status_code=401, category="authentication", message="Groq rejected the backend credentials. Check GROQ_API_KEY.")
         if response.status_code == 403:
-            raise_logged_provider_error(response=response, status_code=403, category="permission", message="The configured Grok credentials do not have permission for this request.")
+            raise_logged_provider_error(response=response, status_code=403, category="permission", message="The configured Groq credentials do not have permission for this request.")
         if response.status_code == 404:
-            raise_logged_provider_error(response=response, status_code=404, category="model_or_endpoint_not_found", message="Grok could not find the configured model or endpoint. Check XAI_MODEL and XAI_API_BASE_URL.")
+            raise_logged_provider_error(response=response, status_code=404, category="model_or_endpoint_not_found", message="Groq could not find the configured model or endpoint. Check GROQ_MODEL and GROQ_API_BASE_URL.")
         if response.status_code == 429:
-            raise_logged_provider_error(response=response, status_code=429, category="rate_limit_or_quota", message="Grok rate limit or quota reached. Try again later or check billing limits.")
+            raise_logged_provider_error(response=response, status_code=429, category="rate_limit_or_quota", message="Groq rate limit or quota reached. Try again later or check billing limits.")
         if response.status_code >= 500:
-            raise_logged_provider_error(response=response, status_code=502, category="upstream_server_error", message="Grok is temporarily unavailable. Try again later.")
+            raise_logged_provider_error(response=response, status_code=502, category="upstream_server_error", message="Groq is temporarily unavailable. Try again later.")
         if response.status_code >= 400:
-            raise_logged_provider_error(response=response, status_code=502, category="upstream_http_error", message="Grok rejected the generation request.")
+            raise_logged_provider_error(response=response, status_code=502, category="upstream_http_error", message="Groq rejected the generation request.")
         try:
             response_payload = response.json()
-            if isinstance(response_payload, dict):
-                status = response_payload.get("status")
-                if status and status != "completed":
-                    provider_code, provider_message = provider_error_details(response)
-                    logger.warning(
-                        "Grok request failed category=incomplete_response upstream_status=%s provider_code=%s provider_message=%s",
-                        response.status_code,
-                        provider_code or "unknown",
-                        provider_message or status,
-                    )
-                    raise AIProviderError("Grok did not complete the generation request.", 502, category="incomplete_response", upstream_status=response.status_code, provider_code=provider_code)
-                if response_payload.get("error"):
-                    raise_logged_provider_error(response=response, status_code=502, category="provider_response_error", message="Grok returned an error response.")
+            if isinstance(response_payload, dict) and response_payload.get("error"):
+                raise_logged_provider_error(response=response, status_code=502, category="provider_response_error", message="Groq returned an error response.")
             generated_code = normalize_generated_code(response_text(response_payload))
         except AIProviderError as exc:
-            if exc.category not in {"incomplete_response", "provider_response_error"}:
-                logger.warning("Grok request failed category=%s upstream_status=%s", exc.category, response.status_code)
+            if exc.category != "provider_response_error":
+                logger.warning("Groq request failed category=%s upstream_status=%s", exc.category, response.status_code)
             raise
         except ValueError as exc:
-            logger.warning("Grok request failed category=malformed_response upstream_status=%s", response.status_code)
-            raise AIProviderError("Grok returned malformed JSON.", 502, category="malformed_response", upstream_status=response.status_code) from exc
+            logger.warning("Groq request failed category=malformed_response upstream_status=%s", response.status_code)
+            raise AIProviderError("Groq returned malformed JSON.", 502, category="malformed_response", upstream_status=response.status_code) from exc
         return generated_code, settings.model

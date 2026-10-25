@@ -108,7 +108,7 @@ function App() {
 
   function useAlternative(code: string) {
     updateSource(code)
-    setEditorNotice('Grok alternative placed in the editor. Run Analyze program to validate it.')
+    setEditorNotice('Groq alternative placed in the editor. Run Analyze program to validate it.')
   }
 
   function inspectToken(token: AnalysisResult['tokens'][number]) {
@@ -148,7 +148,7 @@ function App() {
     {loading && <div className="loading-card" role="status">Analyzing {selectedLanguage === 'mini_python' ? 'Mini Python' : 'Mini C'} source…</div>}
     {analysis && <AnalysisResults analysis={analysis} onLocate={locateDiagnostic} onInspectToken={inspectToken} tokenNotice={tokenNotice} />}
     {!analysis && !loading && <div className="empty-results"><strong>Results are waiting</strong><span>Run the analyzer to view tokens, diagnostics, and the parse tree.</span></div>}
-    {alternative ? <AlternativePanel alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onUse={useAlternative} /> : <section className="ai-placeholder"><div><p className="eyebrow">AI ALTERNATIVE</p><h2>Grok AI Alternative</h2><p>Generate a separate educational implementation with Grok. It will not replace your source or analysis results.</p>{generationError && <p className="error-message" role="alert">{generationError}</p>}{generationLoading && <p className="generation-status" role="status">Generating with Grok…</p>}</div><button type="button" className="secondary-button" onClick={handleGenerateAlternative} disabled={generationLoading}>{generationLoading ? 'Generating…' : 'Generate Alternative'}</button></section>}
+    {alternative ? <AlternativePanel alternative={alternative} copyStatus={copyStatus} onCopy={copyAlternative} onUse={useAlternative} /> : <section className="ai-placeholder"><div><p className="eyebrow">AI ALTERNATIVE</p><h2>Groq AI Alternative</h2><p>Generate a separate educational implementation with Groq. It will not replace your source or analysis results.</p>{generationError && <p className="error-message" role="alert">{generationError}</p>}{generationLoading && <p className="generation-status" role="status">Generating with Groq…</p>}</div><button type="button" className="secondary-button" onClick={handleGenerateAlternative} disabled={generationLoading}>{generationLoading ? 'Generating…' : 'Generate Alternative'}</button></section>}
     </>}
     {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} />}
     <footer>Mini Python and Mini C are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
