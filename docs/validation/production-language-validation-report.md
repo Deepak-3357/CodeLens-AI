@@ -32,6 +32,8 @@ No `.env`, `.env.example`, credential, generated build artifact, or unrelated fr
 
 The release was committed as `6f69d84 fix: support nested Mini Python and Mini C programs` and pushed successfully to `origin/main`. The branch was not divergent before the push (`0 ahead / 0 behind` after fetching origin). The working tree should be clean after the documentation follow-up commit below.
 
+Post-push safe check: `GET /api/health` returned `status=ok`, but the exact Python pattern still returned `parse_status=invalid_partial`, `tree_complete=false`, and 3 diagnostics. This confirms the Render service had not yet picked up `6f69d84` at the time of the check; no automatic deployment was assumed.
+
 ### Root-cause assessment
 
 1. **Mini Python:** the live backend is serving the pre-fix parser behavior. It tokenizes `for`, `in`, `range`, indentation, and `print`, but rejects those statements with `PY_UNEXPECTED_TOKEN`. The local working tree contains parser/lexer changes and regression tests for this exact pattern, and the same input passes locally. This is a production revision/deployment mismatch, not a newly reproduced local parser defect.
