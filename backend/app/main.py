@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.languages.mini_python.analyzer import analyze_mini_python
 from app.languages.mini_c.analyzer import analyze_mini_c
 from app.languages.mini_cpp.analyzer import analyze_mini_cpp
+from app.languages.mini_cpp.interpreter import execute_mini_cpp
 from app.automata import MAX_AUTOMATA_INPUT, get_automaton, list_automata, simulate
 from app.ai_provider import AIProviderError, GroqProvider, MAX_SOURCE_LENGTH, SUPPORTED_LANGUAGES
 from app.onlinecompiler import OnlineCompilerError, OnlineCompilerProvider
@@ -174,6 +175,20 @@ def execute(request: ExecuteRequest) -> ExecutionResponse:
             error_category="validation",
             diagnostics=diagnostics,
             message="Fix the reported source diagnostics before running code.",
+        )
+
+    if request.language == "mini_cpp":
+        outcome = execute_mini_cpp(analysis["tree"], request.stdin or "")
+        return ExecutionResponse(
+            language=request.language,
+            status=outcome.status,
+            stdout=outcome.stdout,
+            stderr=outcome.stderr,
+            compile_output="",
+            error_category=outcome.error_category,
+            diagnostics=[],
+            duration_ms=outcome.duration_ms,
+            message=outcome.message,
         )
 
     try:

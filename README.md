@@ -122,7 +122,7 @@ Response:
 
 ### Safe execution status
 
-Each editor has an independent Run button, optional standard input, and output console. Run first re-analyzes only that editor's current source; lexical or syntax diagnostics produce an `Error` status and prevent execution from starting. Valid source reaches `POST /api/execute`, which submits to OnlineCompiler.io's synchronous execution endpoint and returns the actual result. If OnlineCompiler.io is not configured, the response remains `Unsupported` and no code is executed. The consoles keep Editor A and Editor B output, errors, diagnostics, provider category, status, and duration separate. Output comparison appears only after two genuine successful executions and is limited to that tested run.
+Each editor has an independent Run button, optional standard input, and output console. Run first re-analyzes only that editor's current source; lexical or syntax diagnostics produce an `Error` status and prevent execution from starting. Mini Python and Mini C valid source reaches `POST /api/execute`, which submits to OnlineCompiler.io's synchronous execution endpoint and returns the actual result. Mini C++ valid source uses the separately labelled, AST-driven restricted Mini C++ interpreter described below; it is not sent to OnlineCompiler.io. The consoles keep Editor A and Editor B output, errors, diagnostics, provider category, status, and duration separate. Output comparison appears only after two genuine successful executions and is limited to that tested run.
 
 OnlineCompiler.io configuration is backend-only; never put these values in frontend environment variables or source control. Configure the following Render/backend variables manually when an authorized API key is available:
 
@@ -137,7 +137,7 @@ ONLINECOMPILER_MAX_INPUT_LENGTH=100000
 ONLINECOMPILER_MAX_OUTPUT_LENGTH=64000
 ```
 
-The verified current OnlineCompiler.io compiler identifiers are `python-3.14` and `gcc-15`; keep them configurable because provider versions can change. OnlineCompiler.io documents a 100KB source/input limit, a maximum 30-second `time_limit`, and output/error truncation behavior. Mini Python, Mini C, and Mini C++ are educational analyzers; submitted source is sent unchanged to the selected runtime only where execution is enabled. Mini C++ execution is intentionally disabled until a separate provider compiler ID is verified. The provider's isolated runtime must be independently trusted and monitored; this FastAPI process never uses `exec`, `eval`, shell execution, or subprocesses.
+The verified current OnlineCompiler.io compiler identifiers are `python-3.14` and `gcc-15`; keep them configurable because provider versions can change. OnlineCompiler.io documents a 100KB source/input limit, a maximum 30-second `time_limit`, and output/error truncation behavior. Mini Python, Mini C, and Mini C++ are educational analyzers. Native/provider execution for Mini C++ remains disabled; no C++ compiler ID is invented or reused. The provider's isolated runtime must be independently trusted and monitored; this FastAPI process never uses `exec`, `eval`, shell execution, or subprocesses.
 
 Do not add `exec`, `eval`, shell execution, or direct subprocess execution to the FastAPI process. The UI reports execution success only from a configured OnlineCompiler.io result with status `success`, exit code `0`, no signal, and non-truncated output. Provider HTTP/auth/rate-limit failures are shown separately from runtime or compilation failures. Deployments must verify the provider's isolation and resource controls.
 
@@ -248,7 +248,11 @@ Grammar version: `mini-cpp-1.0`. Mini C++ is a deliberately scoped syntax analyz
 
 The supported beginner subset includes `int`, `short`, `long`, `long long`, `signed`, `unsigned`, `float`, `double`, `char`, `bool`, `void`, `auto`, `string`, and `std::string` declarations; multiple declarators; arrays and initializer lists; assignments; functions and prototypes; blocks; `if`/`else if`/`else`; `while`, `do`/`while`, and traditional `for`; `return`, `break`, `continue`, and empty statements; arithmetic, comparison, equality, logical, assignment, unary, increment/decrement, indexing, calls, and parenthesized expressions; syntax-only `#include` for `iostream`, `string`, `cmath`, and `vector`; `using namespace std;`; selected `using std::...` declarations; and chained `cout`/`cin` stream statements with `std::cout`, `std::cin`, `std::endl`, `cout`, `cin`, and `endl`. It supports comments, integer and floating-point literals, strings with escapes, character literals, `true`/`false`, `nullptr`, and required semicolons.
 
-Templates, classes, arbitrary namespaces, unsupported preprocessor directives, pointers, references, STL operations, operator overloading, type checking, header loading, macro expansion, and runtime semantics are outside the subset. Unsupported syntax remains invalid and produces `CPP_*` diagnostics; the analyzer never fabricates a complete tree. Mini C++ analysis is available through `/api/analyze` and AI alternatives can be generated and independently analyzed. C++ execution remains unavailable until an OnlineCompiler compiler identifier is verified and explicitly configured; the C compiler identifier is never reused for C++.
+Templates, classes, arbitrary namespaces, unsupported preprocessor directives, pointers, references, STL operations, operator overloading, type checking, header loading, macro expansion, and runtime semantics are outside the subset. Unsupported syntax remains invalid and produces `CPP_*` diagnostics; the analyzer never fabricates a complete tree. Mini C++ analysis is available through `/api/analyze` and AI alternatives can be generated and independently analyzed. Native/provider C++ execution remains unavailable until an OnlineCompiler compiler identifier is verified and explicitly configured; the C compiler identifier is never reused for C++.
+
+### Restricted Mini C++ interpreter
+
+`POST /api/execute` can interpret only the parser AST for integer/floating-point variables, declarations, arithmetic expressions, assignments, `return`, and chained `cout`/`std::cout` output containing strings, variables, expressions, and `endl`. `cin`/`std::cin` accepts bounded whitespace-separated integer or floating-point input for existing variables. Functions are limited to the supported AST call path; loops, arrays, initializer lists, unsupported types, unsupported statements, and native C++ features return an explicit `unsupported` result. The interpreter uses step, call-depth, wall-clock, input, and output limits, and reports runtime errors such as division by zero without executing source text through Python `exec`, `eval`, a shell, or a compiler.
 
 ## Checks
 
@@ -303,6 +307,6 @@ Deployment is not considered complete until both public URLs and frontend-to-bac
 - The native source textarea supports line-number navigation and selection, but does not provide full IDE-style syntax highlighting.
 - Automata Lab uses simplified educational patterns and does not claim to be the exact internal transition implementation of the Mini Python, Mini C, or Mini C++ lexers.
 - Mini Python, Mini C, and Mini C++ are scoped subsets, not complete languages.
-- No source code is executed.
-- No database, saved history, or runtime execution exists yet. Phase 6 generation is Groq-only; the dual-editor milestone independently validates both source versions and compares their static analysis results.
+- Mini C++ execution is limited to the AST-driven interpreter subset below; native C++ compilation and arbitrary runtime behavior are not supported.
+- No database or saved history exists. Phase 6 generation is Groq-only; the dual-editor milestone independently validates both source versions and compares their static analysis results.
 - Public free-tier hosting may have cold starts and usage limits.

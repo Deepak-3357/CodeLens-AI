@@ -100,13 +100,22 @@ def test_execute_reports_safe_runtime_block_without_executing_valid_source() -> 
     assert "No code was executed" in body["message"]
 
 
-def test_execute_keeps_mini_cpp_disabled_until_compiler_is_verified() -> None:
-    response = client.post("/api/execute", json={"language": "mini_cpp", "code": "int main() { return 0; }"})
+def test_execute_interprets_restricted_mini_cpp_without_a_compiler_provider() -> None:
+    response = client.post("/api/execute", json={"language": "mini_cpp", "code": "int a = 10; int b = 20; cout << a + b;"})
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "Unsupported"
+    assert body["status"] == "Success"
+    assert body["stdout"] == "30"
+    assert "Interpreted Mini C++" in body["message"]
+
+
+def test_execute_keeps_mini_cpp_unsupported_constructs_out_of_interpreter() -> None:
+    response = client.post("/api/execute", json={"language": "mini_cpp", "code": "int main() { for (int i = 0; i < 2; i++) { cout << i; } }"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "Error"
+    assert body["error_category"] == "unsupported"
     assert body["stdout"] == ""
-    assert "No code was executed" in body["message"]
 
 
 def test_execute_passes_stdin_to_configured_provider(monkeypatch) -> None:
