@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { analyzeCode, executeCode, generateAlternative, getHealth, getLanguages, type AlternativeGeneration, type AnalysisResult, type Diagnostic, type ExecutionResult, type Language, type ParseNode } from './services/api'
+import { analyzeGeneratedAlternative } from './services/generatedValidation'
 import { buildComparison } from './services/comparison'
 import AutomataLab from './components/AutomataLab'
 import CodeEditorPanel from './components/CodeEditorPanel'
@@ -123,7 +124,18 @@ function App() {
     try {
       const result = await generateAlternative(submittedLanguage, submittedSource)
       if (generationRequest.current === requestId && originalSource === submittedSource && originalLanguage === submittedLanguage) {
-        setAlternative(result); setGeneratedSource(result.generated_code); setGeneratedLanguage(result.language); setGeneratedOrigin({ source: submittedSource, language: submittedLanguage }); setGeneratedEdited(false); setGeneratedAnalysis(null); setGeneratedExecution(null); setGeneratedError(''); setShowComparison(false)
+        const generatedSourceAtValidation = result.generated_code
+        const generatedLanguageAtValidation = result.language
+        const generatedRequestId = ++generatedRequest.current
+        setAlternative(result); setGeneratedSource(generatedSourceAtValidation); setGeneratedLanguage(generatedLanguageAtValidation); setGeneratedOrigin({ source: submittedSource, language: submittedLanguage }); setGeneratedEdited(false); setGeneratedAnalysis(null); setGeneratedExecution(null); setGeneratedError(''); setShowComparison(false)
+        try {
+          const analysis = await analyzeGeneratedAlternative({ ...result, generated_code: generatedSourceAtValidation, language: generatedLanguageAtValidation }, analyzeCode)
+          if (generationRequest.current === requestId && generatedRequest.current === generatedRequestId && originalSource === submittedSource && originalLanguage === submittedLanguage) {
+            setGeneratedAnalysis({ result: analysis, source: generatedSourceAtValidation, language: generatedLanguageAtValidation })
+          }
+        } catch (analysisError) {
+          if (generationRequest.current === requestId && generatedRequest.current === generatedRequestId) setGeneratedError(analysisError instanceof Error ? `Generated code was produced, but independent analysis failed: ${analysisError.message}` : 'Generated code was produced, but independent analysis failed.')
+        }
       }
     } catch (requestError) { if (generationRequest.current === requestId) setGenerationError(requestError instanceof Error ? requestError.message : 'Alternative generation failed.') }
     finally { if (generationRequest.current === requestId) setGenerationLoading(false) }

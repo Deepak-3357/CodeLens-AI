@@ -4,7 +4,7 @@ AI-assisted analysis foundation for the educational Mini Python, Mini C, and Min
 
 ## Phase 4 status
 
-Phase 4 provides a unified multi-language analysis workspace for the Mini Python, Mini C, and Mini C++ analyzers. It adds line-numbered source input, diagnostic-to-source navigation, consistent diagnostic summaries, resilient AST visualization, and clear partial/error-node presentation. Phase 6 adds Groq-powered alternative code generation; generated code is not automatically validated or executed.
+Phase 4 provides a unified multi-language analysis workspace for the Mini Python, Mini C, and Mini C++ analyzers. It adds line-numbered source input, diagnostic-to-source navigation, consistent diagnostic summaries, resilient AST visualization, and clear partial/error-node presentation. Phase 6 adds Groq-powered alternative code generation; generated code is automatically submitted to the independent analysis endpoint. Generation alone does not imply validation success: the returned analysis determines Editor B's validation status. If analysis fails, validation remains unavailable, and results from stale source or language selections are not treated as current.
 
 Phase 5 adds Automata Lab: an educational DFA registry and interactive simulator for identifier, integer, arithmetic-operator, relational-operator, and whitespace patterns. Phase 5.2 connects eligible analyzer tokens to the corresponding DFA.
 
