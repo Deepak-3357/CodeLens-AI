@@ -34,6 +34,7 @@ class OnlineCompilerConfig:
         api_key = os.getenv("ONLINECOMPILER_API_KEY", "").strip()
         python_compiler = os.getenv("ONLINECOMPILER_PYTHON_COMPILER", "").strip()
         c_compiler = os.getenv("ONLINECOMPILER_C_COMPILER", "").strip()
+        # C++ remains intentionally unavailable until a provider compiler ID is verified.
         if not api_key or not python_compiler or not c_compiler:
             return None
         return cls(
@@ -100,6 +101,12 @@ class OnlineCompilerProvider:
                 error_category="configuration",
             )
 
+        if language == "mini_cpp" or language == "mini_java":
+            return ExecutionOutcome(
+                status="Unsupported", stdout="", stderr="", compile_output="", duration_ms=None,
+                message="Execution is unavailable for this language until a verified OnlineCompiler compiler ID is configured. No code was executed.",
+                error_category="configuration",
+            )
         compiler = self.config.python_compiler if language == "mini_python" else self.config.c_compiler
         payload: dict[str, Any] = {
             "compiler": compiler,

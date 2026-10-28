@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 
-SUPPORTED_LANGUAGES = {"mini_python", "mini_c"}
+SUPPORTED_LANGUAGES = {"mini_python", "mini_c", "mini_cpp"}
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MODEL = "openai/gpt-oss-20b"
 DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -67,6 +67,12 @@ def generation_system_prompt(language: str) -> str:
             "Mini C subset: declarations, assignments, printf, if, while, blocks, required "
             "semicolons, numbers, quoted strings, character literals, booleans true/false, "
             "identifiers, parentheses, and the operators + - * / % ! == != < > <= >=."
+        ),
+        "mini_cpp": (
+            "Mini C++ subset: primitive int, float, double, char, and bool declarations; assignments; "
+            "functions; blocks; if/else; while; for; return; std::cout << expressions << std::endl; "
+            "numbers, quoted strings, character literals, true/false, parentheses, and the operators "
+            "+ - * / % ! && || == != < > <= >=. Do not use classes, templates, pointers, STL, or unsupported headers."
         ),
     }[language]
     return (

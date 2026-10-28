@@ -1,5 +1,5 @@
 export type Language = {
-  id: 'mini_python' | 'mini_c'
+  id: 'mini_python' | 'mini_c' | 'mini_cpp'
   name: string
   status: string
 }
@@ -16,7 +16,7 @@ export type AutomatonTransition = { from: string; to: string; label: string; mat
 export type AutomatonDefinition = { id: string; name: string; description: string; pattern: string; start_state: string; accepting_states: string[]; states: AutomatonState[]; transitions: AutomatonTransition[]; examples?: { accepted: string[]; rejected: string[] } }
 export type AutomatonTraceStep = { step: number; index: number; character: string; current_state: string; transition: string; next_state: string; accepted: boolean }
 export type AutomatonSimulation = { automaton_id: string; input: string; trace: AutomatonTraceStep[]; final_state: string; accepted: boolean; characters_processed: number; failed_transition: { index: number; character: string; from_state: string; to_state: string; transition: string } | null; explanation: string }
-export type AlternativeGeneration = { language: 'mini_python' | 'mini_c'; generated_code: string; provider: 'groq'; model: string }
+export type AlternativeGeneration = { language: 'mini_python' | 'mini_c' | 'mini_cpp'; generated_code: string; provider: 'groq'; model: string }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '')
 

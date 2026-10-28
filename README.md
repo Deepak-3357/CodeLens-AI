@@ -1,10 +1,10 @@
 # CodeLens AI
 
-AI-assisted analysis foundation for the educational Mini Python and Mini C language subsets.
+AI-assisted analysis foundation for the educational Mini Python, Mini C, and Mini C++ language subsets.
 
 ## Phase 4 status
 
-Phase 4 provides a unified multi-language analysis workspace for the Mini Python and Mini C analyzers. It adds line-numbered source input, diagnostic-to-source navigation, consistent diagnostic summaries, resilient AST visualization, and clear partial/error-node presentation. Phase 6 adds Groq-powered alternative code generation; generated code is not automatically validated or executed.
+Phase 4 provides a unified multi-language analysis workspace for the Mini Python, Mini C, and Mini C++ analyzers. It adds line-numbered source input, diagnostic-to-source navigation, consistent diagnostic summaries, resilient AST visualization, and clear partial/error-node presentation. Phase 6 adds Groq-powered alternative code generation; generated code is not automatically validated or executed.
 
 Phase 5 adds Automata Lab: an educational DFA registry and interactive simulator for identifier, integer, arithmetic-operator, relational-operator, and whitespace patterns. Phase 5.2 connects eligible analyzer tokens to the corresponding DFA.
 
@@ -84,7 +84,7 @@ Returns a deployment-safe service status.
 
 ### `GET /api/languages`
 
-Returns the planned Mini Python and Mini C language subsets.
+Returns the implemented Mini Python, Mini C, and Mini C++ language subsets.
 
 ### `POST /api/analyze`
 
@@ -118,7 +118,7 @@ Response:
 {"language":"mini_python","generated_code":"y = 10\nprint(y)","provider":"groq","model":"openai/gpt-oss-20b"}
 ```
 
-Only `mini_python` and `mini_c` are accepted. Source must be non-blank and no larger than 100,000 characters. The generated response populates the separate Groq-Generated Code editor automatically; the original editor and its analysis remain unchanged. Both editors have independent deterministic validation results. The endpoint does not claim equivalence, validation, security, or execution of the generated code.
+`mini_python`, `mini_c`, and `mini_cpp` are accepted. Source must be non-blank and no larger than 100,000 characters. The generated response populates the separate Groq-Generated Code editor automatically; the original editor and its analysis remain unchanged. Both editors have independent deterministic validation results. The endpoint does not claim equivalence, validation, security, or execution of the generated code.
 
 ### Safe execution status
 
@@ -137,7 +137,7 @@ ONLINECOMPILER_MAX_INPUT_LENGTH=100000
 ONLINECOMPILER_MAX_OUTPUT_LENGTH=64000
 ```
 
-The verified current OnlineCompiler.io compiler identifiers are `python-3.14` and `gcc-15`; keep them configurable because provider versions can change. OnlineCompiler.io documents a 100KB source/input limit, a maximum 30-second `time_limit`, and output/error truncation behavior. Mini Python and Mini C are educational analyzers; submitted source is sent unchanged to the selected real Python/C runtime, so analyzer acceptance does not guarantee runtime compatibility and runtime success does not replace static diagnostics. The provider's isolated runtime must be independently trusted and monitored; this FastAPI process never uses `exec`, `eval`, shell execution, or subprocesses.
+The verified current OnlineCompiler.io compiler identifiers are `python-3.14` and `gcc-15`; keep them configurable because provider versions can change. OnlineCompiler.io documents a 100KB source/input limit, a maximum 30-second `time_limit`, and output/error truncation behavior. Mini Python, Mini C, and Mini C++ are educational analyzers; submitted source is sent unchanged to the selected runtime only where execution is enabled. Mini C++ execution is intentionally disabled until a separate provider compiler ID is verified. The provider's isolated runtime must be independently trusted and monitored; this FastAPI process never uses `exec`, `eval`, shell execution, or subprocesses.
 
 Do not add `exec`, `eval`, shell execution, or direct subprocess execution to the FastAPI process. The UI reports execution success only from a configured OnlineCompiler.io result with status `success`, exit code `0`, no signal, and non-truncated output. Provider HTTP/auth/rate-limit failures are shown separately from runtime or compilation failures. Deployments must verify the provider's isolation and resource controls.
 
@@ -242,6 +242,14 @@ primary ::= NUMBER | STRING | CHARACTER | "true" | "false" | IDENTIFIER | "(" ex
 
 Mini C supports `//` and `/* ... */` comments, integer and decimal numbers, quoted strings, character literals, nested braces, declarations including `const`, multiple declarators, arrays and initializer lists, indexing, basic pointer/address-of syntax, named `struct`/`enum` variables, assignments including compound operators, calls, function prototypes and definitions, `struct`, `enum`, and `typedef` declaration syntax, logical/bitwise expressions, `if`/`else`, `while`, `do`/`while`, `for`, `switch`/`case`/`default`, `break`, `continue`, `return`, and syntax-only `#include` recognition. It does not execute functions, includes, or runtime behavior. Full pointer/type checking, struct member semantics, multidimensional semantics, and macro expansion remain outside the declared scope. Required semicolons are enforced. Empty input is invalid.
 
+## Mini C++ grammar
+
+Grammar version: `mini-cpp-1.0`. Mini C++ is a deliberately scoped syntax analyzer, not a full C++ compiler.
+
+The initial subset supports `int`, `float`, `double`, `char`, and `bool` declarations, assignments, functions, blocks, `if`/`else`, `while`, `for`, `return`, arithmetic/comparison/logical expressions, parenthesized expressions, syntax-only `#include` recognition, and `std::cout << expression << std::endl` output statements. It supports comments, integer and floating-point literals, strings, character literals, `true`/`false`, and required semicolons.
+
+Templates, classes, namespaces beyond the recognized `std::cout`/`std::endl` form, pointers, references, STL containers, operator overloading, type checking, header loading, macro expansion, and runtime semantics are outside the subset. Mini C++ analysis is available through `/api/analyze` and AI alternatives can be generated and independently analyzed. C++ execution remains unavailable until an OnlineCompiler compiler identifier is verified and explicitly configured; the C compiler identifier is never reused for C++.
+
 ## Checks
 
 Frontend production build:
@@ -291,10 +299,10 @@ Deployment is not considered complete until both public URLs and frontend-to-bac
 
 ## Known limitations
 
-- Mini Python and Mini C analysis are limited to their documented grammars.
+- Mini Python, Mini C, and Mini C++ analysis are limited to their documented grammars.
 - The native source textarea supports line-number navigation and selection, but does not provide full IDE-style syntax highlighting.
-- Automata Lab uses simplified educational patterns and does not claim to be the exact internal transition implementation of the Mini Python or Mini C lexers.
-- Mini Python and Mini C are planned subsets, not complete languages.
+- Automata Lab uses simplified educational patterns and does not claim to be the exact internal transition implementation of the Mini Python, Mini C, or Mini C++ lexers.
+- Mini Python, Mini C, and Mini C++ are scoped subsets, not complete languages.
 - No source code is executed.
 - No database, saved history, or runtime execution exists yet. Phase 6 generation is Groq-only; the dual-editor milestone independently validates both source versions and compares their static analysis results.
 - Public free-tier hosting may have cold starts and usage limits.

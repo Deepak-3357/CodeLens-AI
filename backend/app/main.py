@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.languages.mini_python.analyzer import analyze_mini_python
 from app.languages.mini_c.analyzer import analyze_mini_c
+from app.languages.mini_cpp.analyzer import analyze_mini_cpp
 from app.automata import MAX_AUTOMATA_INPUT, get_automaton, list_automata, simulate
 from app.ai_provider import AIProviderError, GroqProvider, MAX_SOURCE_LENGTH, SUPPORTED_LANGUAGES
 from app.onlinecompiler import OnlineCompilerError, OnlineCompilerProvider
@@ -131,6 +132,7 @@ def languages() -> LanguagesResponse:
         languages=[
             Language(id="mini_python", name="Mini Python", status="implemented subset"),
             Language(id="mini_c", name="Mini C", status="implemented subset"),
+            Language(id="mini_cpp", name="Mini C++", status="implemented subset"),
         ]
     )
 
@@ -141,10 +143,12 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
         return AnalysisResponse(**analyze_mini_python(request.code))
     if request.language == "mini_c":
         return AnalysisResponse(**analyze_mini_c(request.code))
-    if request.language not in {"mini_python", "mini_c"}:
+    if request.language == "mini_cpp":
+        return AnalysisResponse(**analyze_mini_cpp(request.code))
+    if request.language not in {"mini_python", "mini_c", "mini_cpp"}:
         raise HTTPException(
             status_code=422,
-            detail="Unsupported language. Choose mini_python or mini_c.",
+            detail="Unsupported language. Choose mini_python, mini_c, or mini_cpp.",
         )
 
 
@@ -154,8 +158,10 @@ def execute(request: ExecuteRequest) -> ExecutionResponse:
         analysis = analyze_mini_python(request.code)
     elif request.language == "mini_c":
         analysis = analyze_mini_c(request.code)
+    elif request.language == "mini_cpp":
+        analysis = analyze_mini_cpp(request.code)
     else:
-        raise HTTPException(status_code=422, detail="Unsupported language. Choose mini_python or mini_c.")
+        raise HTTPException(status_code=422, detail="Unsupported language. Choose mini_python, mini_c, or mini_cpp.")
 
     diagnostics = [DiagnosticResponse(**item) for item in analysis["diagnostics"]]
     if diagnostics:
@@ -220,7 +226,7 @@ def automaton_simulate(automaton_id: str, request: AutomataSimulationRequest) ->
 @app.post("/api/generate-alternative", response_model=GenerateAlternativeResponse)
 def generate_alternative(request: GenerateAlternativeRequest) -> GenerateAlternativeResponse:
     if request.language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(status_code=422, detail="Unsupported language. Choose mini_python or mini_c.")
+        raise HTTPException(status_code=422, detail="Unsupported language. Choose mini_python, mini_c, or mini_cpp.")
     if not request.source_code.strip():
         raise HTTPException(status_code=422, detail="Source code must not be blank.")
     try:

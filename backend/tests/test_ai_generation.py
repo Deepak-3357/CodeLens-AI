@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.languages.mini_cpp.analyzer import analyze_mini_cpp
 
 
 client = TestClient(app)
@@ -52,13 +53,25 @@ def test_generation_uses_groq_and_keeps_source_separate(monkeypatch: pytest.Monk
     assert captured["json"]["messages"][1]["role"] == "user"  # type: ignore[index]
 
 
-@pytest.mark.parametrize("language", ["mini_python", "mini_c"])
+@pytest.mark.parametrize("language", ["mini_python", "mini_c", "mini_cpp"])
 def test_generation_accepts_supported_languages(monkeypatch: pytest.MonkeyPatch, language: str) -> None:
     configure_groq(monkeypatch)
     monkeypatch.setattr("app.ai_provider.httpx.post", lambda *args, **kwargs: FakeResponse(payload={"choices": [{"message": {"content": "alternative"}}]}))
     response = client.post("/api/generate-alternative", json={"language": language, "source_code": "x"})
     assert response.status_code == 200
     assert response.json()["language"] == language
+
+
+def test_cpp_generated_alternative_still_requires_independent_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_groq(monkeypatch)
+    generated = "int main() { std::cout << 1 << std::endl; }"
+    monkeypatch.setattr("app.ai_provider.httpx.post", lambda *args, **kwargs: FakeResponse(payload={"choices": [{"message": {"content": generated}}]}))
+    response = client.post("/api/generate-alternative", json={"language": "mini_cpp", "source_code": "int main() { return 0; }"})
+    assert response.status_code == 200
+    analyzed = analyze_mini_cpp(response.json()["generated_code"])
+    assert analyzed["language"] == "mini_cpp"
+    assert analyzed["parse_status"] == "valid_complete"
+    assert analyzed["tree_complete"] is True
 
 
 def test_generation_rejects_invalid_input(monkeypatch: pytest.MonkeyPatch) -> None:

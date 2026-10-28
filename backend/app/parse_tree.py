@@ -177,7 +177,7 @@ def build_parse_tree(ast: dict[str, Any] | None, tokens: list[Any], language: st
                 parameter_count += 1
                 if parameter_count < len(ast_children) and ast_children[parameter_count].get("type") == "Parameter":
                     add(cursor.take("DELIMITER", ","))
-            if not parameter_count:
+            if not parameter_count and language == "mini_c":
                 add(cursor.take("KEYWORD", "void"))
             add(cursor.take("DELIMITER", ")"))
             for child in ast_children[parameter_count:]:
@@ -394,6 +394,35 @@ def build_parse_tree(ast: dict[str, Any] | None, tokens: list[Any], language: st
             add(cursor.take("DELIMITER", ")"))
         elif node_type == "ExpressionStatement":
             add(build(ast_children[0]) if ast_children else None)
+        elif node_type == "VariableDeclaration":
+            if attributes.get("const"):
+                add(cursor.take("KEYWORD", "const"))
+            add(cursor.take("KEYWORD", attributes.get("declared_type")))
+            for index, child in enumerate(ast_children):
+                if index:
+                    add(cursor.take("DELIMITER", ","))
+                child_attributes = child.get("attributes", {})
+                add(cursor.take("IDENTIFIER", child_attributes.get("name")))
+                if child.get("children"):
+                    add(cursor.take("OPERATOR", "="))
+                    add(build(child["children"][0]))
+            add(cursor.take("DELIMITER", ";"))
+        elif node_type == "ParenthesizedExpression":
+            add(cursor.take("DELIMITER", "("))
+            add(build(ast_children[0]) if ast_children else None)
+            add(cursor.take("DELIMITER", ")"))
+        elif node_type == "OutputStatement":
+            add(cursor.take("KEYWORD", "std"))
+            add(cursor.take("OPERATOR", "::"))
+            add(cursor.take("KEYWORD", "cout"))
+            for child in ast_children:
+                add(cursor.take("OPERATOR", "<<"))
+                add(build(child))
+            add(cursor.take("DELIMITER", ";"))
+        elif node_type == "EndlLiteral":
+            add(cursor.take("KEYWORD", "std"))
+            add(cursor.take("OPERATOR", "::"))
+            add(cursor.take("KEYWORD", "endl"))
         elif node_type == "FunctionDefinitionPython":
             add(cursor.take("KEYWORD", "def"))
             add(cursor.take("IDENTIFIER", attributes.get("name")))

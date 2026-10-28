@@ -15,7 +15,7 @@ def test_health_endpoint() -> None:
 def test_languages_endpoint() -> None:
     response = client.get("/api/languages")
     assert response.status_code == 200
-    assert [item["id"] for item in response.json()["languages"]] == ["mini_python", "mini_c"]
+    assert [item["id"] for item in response.json()["languages"]] == ["mini_python", "mini_c", "mini_cpp"]
     assert all(item["status"] == "implemented subset" for item in response.json()["languages"])
 
 
@@ -39,6 +39,17 @@ def test_analyze_supports_mini_c() -> None:
     assert response.json()["tree_complete"] is True
 
 
+def test_analyze_supports_mini_cpp() -> None:
+    response = client.post("/api/analyze", json={"language": "mini_cpp", "code": "int main() { int x = 1; std::cout << x << std::endl; }"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["language"] == "mini_cpp"
+    assert body["grammar_version"] == "mini-cpp-1.0"
+    assert body["success"] is True
+    assert body["parse_status"] == "valid_complete"
+    assert body["tree_complete"] is True
+
+
 def test_analyze_marks_recovered_syntax_trees_as_partial() -> None:
     python_response = client.post("/api/analyze", json={"language": "mini_python", "code": "print(1 + 2\n"})
     c_response = client.post("/api/analyze", json={"language": "mini_c", "code": "int x = 1"})
@@ -52,7 +63,7 @@ def test_analyze_marks_recovered_syntax_trees_as_partial() -> None:
 
 
 def test_analyze_marks_empty_sources_as_no_tree() -> None:
-    for language in ("mini_python", "mini_c"):
+    for language in ("mini_python", "mini_c", "mini_cpp"):
         response = client.post("/api/analyze", json={"language": language, "code": ""})
         assert response.json()["parse_status"] == "invalid_no_tree"
         assert response.json()["tree_complete"] is False
@@ -60,7 +71,7 @@ def test_analyze_marks_empty_sources_as_no_tree() -> None:
 
 
 def test_analyze_rejects_unknown_language() -> None:
-    response = client.post("/api/analyze", json={"language": "mini_java", "code": "int x = 1;"})
+    response = client.post("/api/analyze", json={"language": "mini_java", "code": "class Main {}"})
     assert response.status_code == 422
 
 
@@ -86,6 +97,15 @@ def test_execute_reports_safe_runtime_block_without_executing_valid_source() -> 
     assert body["status"] == "Unsupported"
     assert body["stdout"] == ""
     assert body["diagnostics"] == []
+    assert "No code was executed" in body["message"]
+
+
+def test_execute_keeps_mini_cpp_disabled_until_compiler_is_verified() -> None:
+    response = client.post("/api/execute", json={"language": "mini_cpp", "code": "int main() { return 0; }"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "Unsupported"
+    assert body["stdout"] == ""
     assert "No code was executed" in body["message"]
 
 
