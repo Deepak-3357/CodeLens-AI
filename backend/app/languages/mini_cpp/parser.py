@@ -34,7 +34,13 @@ def contains_error(tree: dict[str, Any] | None) -> bool:
 
 
 class Parser:
-    PRECEDENCE = {"||": 1, "&&": 2, "==": 3, "!=": 3, "<": 4, "<=": 4, ">": 4, ">=": 4, "+": 5, "-": 5, "*": 6, "/": 6, "%": 6}
+    PRECEDENCE = {
+        "=": 1, "+=": 1, "-=": 1, "*=": 1, "/=": 1, "%=": 1,
+        "?": 2, "||": 3, "&&": 4, "==": 5, "!=": 5,
+        "<": 6, "<=": 6, ">": 6, ">=": 6, "+": 7, "-": 7,
+        "*": 8, "/": 8, "%": 8,
+    }
+    TYPE_PARTS = TYPE_KEYWORDS | {"std", "::"}
 
     def __init__(self, tokens: list[Token]) -> None:
         self.tokens = tokens
@@ -89,109 +95,197 @@ class Parser:
         return node("Program", children)
 
     def declaration_or_statement(self) -> dict[str, Any] | None:
+        if self.check("DELIMITER", ";"):
+            self.advance(); return node("EmptyStatement")
+        if self.check("KEYWORD", "using"):
+            return self.using_statement()
         if self.check("KEYWORD", "if"): return self.if_statement()
         if self.check("KEYWORD", "while"): return self.while_statement()
+        if self.check("KEYWORD", "do"): return self.do_while_statement()
         if self.check("KEYWORD", "for"): return self.for_statement()
         if self.check("KEYWORD", "return"): return self.return_statement()
         if self.check("KEYWORD", "break"): return self.simple_statement("BreakStatement")
         if self.check("KEYWORD", "continue"): return self.simple_statement("ContinueStatement")
         if self.check("DELIMITER", "{"): return self.block()
         if self.is_type_start():
-            if self.peek().type in {"IDENTIFIER", "KEYWORD"} and self.peek(2).lexeme == "(":
-                return self.function_definition()
-            return self.declaration(True)
+            return self.function_or_declaration()
+        if self.is_stream_start():
+            return self.stream_statement()
         if self.is_assignment_start():
             return self.assignment_statement()
-        if self.is_output_start():
-            return self.output_statement()
-        if self.check("IDENTIFIER") or self.check("NUMBER") or self.check("STRING") or self.check("CHARACTER"):
+        if self.check("IDENTIFIER") or self.check("KEYWORD") or self.check("NUMBER") or self.check("STRING") or self.check("CHARACTER"):
             expression = self.expression()
             semicolon = self.expect("DELIMITER", ";", "Expected ';' after expression.")
             return node("ExpressionStatement", [expression], **({"incomplete": True} if semicolon is None or contains_error(expression) else {}))
         if self.check("DELIMITER", "}"):
             self.error("CPP_UNEXPECTED_CLOSING_BRACE", "Unexpected closing brace."); self.advance(); return None
-        self.error("CPP_UNEXPECTED_TOKEN", "Expected a supported C++ declaration or statement.")
+        self.error("CPP_UNSUPPORTED_SYNTAX", "Expected a supported C++ declaration or statement.")
         self.synchronize()
         return None
 
     def is_type_start(self) -> bool:
-        return (self.check("KEYWORD") and self.current.lexeme in TYPE_KEYWORDS) or (self.check("KEYWORD", "const") and self.peek().lexeme in TYPE_KEYWORDS - {"void"})
+        if self.check("KEYWORD", "const"):
+            return self.peek().lexeme in TYPE_KEYWORDS or (self.peek().lexeme == "std" and self.peek(2).lexeme == "::" and self.peek(3).lexeme == "string")
+        return (self.check("KEYWORD") and self.current.lexeme in TYPE_KEYWORDS) or (self.check("KEYWORD", "std") and self.peek().lexeme == "::" and self.peek(2).lexeme == "string")
 
-    def is_assignment_start(self) -> bool:
-        return self.check("IDENTIFIER") and (self.peek().lexeme in {"=", "+=", "-=", "*=", "/="} or self.peek().lexeme in {"++", "--"})
+    def type_lookahead_end(self) -> int:
+        position = self.index
+        if self.tokens[position].lexeme == "const": position += 1
+        while position < len(self.tokens) and self.tokens[position].lexeme in TYPE_KEYWORDS | {"std", "::"}:
+            position += 1
+        return position
 
-    def is_output_start(self) -> bool:
-        return self.current.lexeme == "std" and self.peek().lexeme == "::" and self.peek(2).lexeme == "cout"
+    def looks_like_function(self) -> bool:
+        position = self.type_lookahead_end()
+        return position + 1 < len(self.tokens) and self.tokens[position].type in {"IDENTIFIER", "KEYWORD"} and self.tokens[position + 1].lexeme == "("
+
+    def function_or_declaration(self) -> dict[str, Any]:
+        if self.looks_like_function():
+            return self.function_definition()
+        return self.declaration(True)
+
+    def parse_type(self) -> tuple[str, bool]:
+        const = bool(self.match("KEYWORD", "const"))
+        parts: list[str] = []
+        while self.current.lexeme in TYPE_KEYWORDS | {"std", "::"}:
+            parts.append(self.advance().lexeme)
+            if parts[-1] == "long" and self.current.lexeme == "long":
+                continue
+        return " ".join(parts).replace("std ::", "std::"), const
 
     def declaration(self, require_semicolon: bool) -> dict[str, Any]:
-        const = bool(self.match("KEYWORD", "const"))
-        declared_type = self.expect("KEYWORD", message="Expected a C++ type.")
+        declared_type, const = self.parse_type()
         declarators: list[dict[str, Any]] = []
         first_name = self.expect("IDENTIFIER", message="Expected an identifier after the type.")
-        expression = None
-        if self.match("OPERATOR", "="):
-            expression = self.expression()
-        if first_name:
-            declarators.append(node("VariableDeclarator", [expression] if expression else [], name=first_name.lexeme))
-        while self.match("DELIMITER", ","):
-            name = self.expect("IDENTIFIER", message="Expected an identifier after ','.")
-            value = None
-            if self.match("OPERATOR", "="): value = self.expression()
-            declarators.append(node("VariableDeclarator", [value] if value else [], name=name.lexeme if name else "<missing>"))
+        while first_name:
+            dimensions: list[dict[str, Any]] = []
+            while self.match("DELIMITER", "["):
+                dimensions.append(self.expression()) if not self.check("DELIMITER", "]") else None
+                self.expect("DELIMITER", "]", "Expected ']' after array dimension.")
+            initializer: dict[str, Any] | None = None
+            if self.match("OPERATOR", "="):
+                if self.match("DELIMITER", "{"):
+                    values: list[dict[str, Any]] = []
+                    while not self.check("DELIMITER", "}") and not self.check("EOF"):
+                        values.append(self.expression())
+                        if not self.match("DELIMITER", ","): break
+                    self.expect("DELIMITER", "}", "Expected '}' after initializer list.")
+                    initializer = node("InitializerList", values)
+                else:
+                    initializer = self.expression()
+            children = ([initializer] if initializer else []) + dimensions
+            declarators.append(node("VariableDeclarator", children, name=first_name.lexeme))
+            if not self.match("DELIMITER", ","):
+                break
+            first_name = self.expect("IDENTIFIER", message="Expected an identifier after ','.")
         semicolon = self.expect("DELIMITER", ";", "Expected ';' after declaration.") if require_semicolon else True
-        attributes = {"declared_type": declared_type.lexeme if declared_type else "<missing>", "const": const}
         incomplete = first_name is None or semicolon is None or any(contains_error(item) for item in declarators)
+        attributes: dict[str, Any] = {"declared_type": declared_type or "<missing>", "const": const}
         if incomplete: attributes["incomplete"] = True
         return node("VariableDeclaration", declarators, **attributes)
 
     def function_definition(self) -> dict[str, Any]:
-        return_type = self.advance()
+        return_type, _ = self.parse_type()
         name = self.expect("IDENTIFIER", message="Expected a function name.")
         self.expect("DELIMITER", "(", "Expected '(' after function name.")
         parameters: list[dict[str, Any]] = []
         if not self.check("DELIMITER", ")"):
             while True:
-                parameter_type = self.expect("KEYWORD", message="Expected a parameter type.")
-                parameter_name = self.expect("IDENTIFIER", message="Expected a parameter name.")
-                parameters.append(node("Parameter", [], declared_type=parameter_type.lexeme if parameter_type else "<missing>", name=parameter_name.lexeme if parameter_name else "<missing>"))
+                parameter_type, parameter_const = self.parse_type()
+                parameter_name = None if self.check("DELIMITER", ",") or self.check("DELIMITER", ")") else self.expect("IDENTIFIER", message="Expected a parameter name.")
+                parameters.append(node("Parameter", [], declared_type=parameter_type, const=parameter_const, name=parameter_name.lexeme if parameter_name else "<missing>"))
                 if not self.match("DELIMITER", ","): break
         self.expect("DELIMITER", ")", "Expected ')' after function parameters.")
         body = self.block() if self.check("DELIMITER", "{") else None
-        attributes = {"return_type": return_type.lexeme, "name": name.lexeme if name else "<missing>"}
-        if body is None: attributes["incomplete"] = True
+        if body is None:
+            self.expect("DELIMITER", ";", "Expected '{' or ';' after function declaration.")
+        attributes: dict[str, Any] = {"return_type": return_type, "name": name.lexeme if name else "<missing>"}
+        if body is None: attributes["prototype"] = True
+        if name is None or contains_error(body): attributes["incomplete"] = True
         return node("FunctionDefinition", parameters + ([body] if body else []), **attributes)
 
+    def using_statement(self) -> dict[str, Any]:
+        self.advance()
+        if self.match("KEYWORD", "namespace"):
+            namespace = self.advance() if self.current.type in {"IDENTIFIER", "KEYWORD"} else None
+            if namespace is None:
+                self.error("CPP_EXPECTED_TOKEN", "Expected a namespace name after 'using namespace'.")
+            semicolon = self.expect("DELIMITER", ";", "Expected ';' after using namespace declaration.")
+            valid = namespace is not None and namespace.lexeme == "std" and semicolon is not None
+            if not valid: self.error("CPP_UNSUPPORTED_NAMESPACE", "Only 'using namespace std;' is supported.", namespace or self.current)
+            return node("UsingNamespace", [], name=namespace.lexeme if namespace else "<missing>", **({"incomplete": True} if not valid else {}))
+        if self.match("KEYWORD", "std") and self.match("OPERATOR", "::"):
+            name = self.expect("KEYWORD", message="Expected a supported std name.")
+            semicolon = self.expect("DELIMITER", ";", "Expected ';' after using declaration.")
+            valid = name is not None and name.lexeme in {"cout", "cin", "endl", "string"} and semicolon is not None
+            if not valid: self.error("CPP_UNSUPPORTED_NAMESPACE", "Only selected std names are supported.", name or self.current)
+            return node("UsingDeclaration", [], name=name.lexeme if name else "<missing>", **({"incomplete": True} if not valid else {}))
+        self.error("CPP_UNSUPPORTED_NAMESPACE", "Only 'using namespace std;' and selected std names are supported.")
+        self.synchronize()
+        return node("UsingDeclaration", [], incomplete=True)
+
+    def assignment_target(self) -> dict[str, Any]:
+        target = self.primary()
+        return target
+
+    def is_assignment_start(self) -> bool:
+        return self.check("IDENTIFIER") and (self.peek().lexeme in {"=", "+=", "-=", "*=", "/=", "%=", "++", "--"} or self.peek().lexeme == "[")
+
     def assignment_statement(self) -> dict[str, Any]:
-        target = self.advance()
+        target = self.assignment_target()
+        if self.current.lexeme in {"++", "--"}:
+            operator = self.advance(); semicolon = self.expect("DELIMITER", ";", "Expected ';' after update expression.")
+            return node("UpdateStatement", [target], operator=operator.lexeme, **({"incomplete": True} if semicolon is None else {}))
         operator = self.advance()
-        if operator.lexeme in {"++", "--"}:
-            semicolon = self.expect("DELIMITER", ";", "Expected ';' after update expression.")
-            return node("UpdateStatement", [node("Identifier", name=target.lexeme)], operator=operator.lexeme, **({"incomplete": True} if semicolon is None else {}))
         expression = self.expression()
         semicolon = self.expect("DELIMITER", ";", "Expected ';' after assignment.")
-        return node("Assignment", [expression], target=target.lexeme, operator=operator.lexeme, **({"incomplete": True} if semicolon is None or contains_error(expression) else {}))
+        return node("Assignment", [target, expression], operator=operator.lexeme, **({"incomplete": True} if semicolon is None or contains_error(expression) else {}))
 
-    def output_statement(self) -> dict[str, Any]:
-        self.advance(); self.expect("OPERATOR", "::"); self.expect("KEYWORD", "cout")
+    def stream_prefix(self) -> tuple[str, str] | None:
+        start = self.index
+        qualified = self.match("KEYWORD", "std") is not None
+        if qualified and not self.match("OPERATOR", "::"):
+            self.index = start; return None
+        name = self.current.lexeme
+        if name not in {"cout", "cin"}:
+            self.index = start; return None
+        self.advance()
+        return ("output" if name == "cout" else "input", f"std::{name}" if qualified else name)
+
+    def is_stream_start(self) -> bool:
+        start = self.index
+        result = self.stream_prefix() is not None
+        self.index = start
+        return result
+
+    def stream_statement(self) -> dict[str, Any]:
+        kind, name = self.stream_prefix() or ("output", "cout")
+        operator = "<<" if kind == "output" else ">>"
         values: list[dict[str, Any]] = []
-        while self.match("OPERATOR", "<<"):
-            if self.current.lexeme == "std" and self.peek().lexeme == "::" and self.peek(2).lexeme == "endl":
+        while self.match("OPERATOR", operator):
+            if kind == "output" and self.current.lexeme in {"endl"}:
+                values.append(node("EndlLiteral", value=self.advance().lexeme))
+            elif kind == "output" and self.current.lexeme == "std" and self.peek().lexeme == "::" and self.peek(2).lexeme == "endl":
                 self.advance(); self.advance(); self.advance(); values.append(node("EndlLiteral", value="std::endl"))
             else:
                 values.append(self.expression())
-        semicolon = self.expect("DELIMITER", ";", "Expected ';' after std::cout.")
-        return node("OutputStatement", values, **({"incomplete": True} if semicolon is None or any(contains_error(item) for item in values) else {}))
+        semicolon = self.expect("DELIMITER", ";", f"Expected ';' after {name} stream statement.")
+        return node("OutputStatement" if kind == "output" else "InputStatement", values, stream=name, **({"incomplete": True} if semicolon is None or any(contains_error(value) for value in values) else {}))
 
     def if_statement(self) -> dict[str, Any]:
         self.advance(); self.expect("DELIMITER", "(", "Expected '(' after if."); condition = self.expression(); self.expect("DELIMITER", ")", "Expected ')' after if condition.")
         body = self.statement_body(); else_body = None
-        if self.match("KEYWORD", "else"): else_body = self.statement_body()
+        if self.match("KEYWORD", "else"): else_body = self.if_statement() if self.check("KEYWORD", "if") else self.statement_body()
         children = [condition, body] + ([else_body] if else_body else [])
         return node("IfStatement", children, **({"incomplete": True} if any(contains_error(item) for item in children) else {}))
 
     def while_statement(self) -> dict[str, Any]:
         self.advance(); self.expect("DELIMITER", "(", "Expected '(' after while."); condition = self.expression(); self.expect("DELIMITER", ")", "Expected ')' after while condition."); body = self.statement_body()
         return node("WhileStatement", [condition, body], **({"incomplete": True} if contains_error(condition) or contains_error(body) else {}))
+
+    def do_while_statement(self) -> dict[str, Any]:
+        self.advance(); body = self.statement_body(); self.expect("KEYWORD", "while", "Expected 'while' after do body."); self.expect("DELIMITER", "(", "Expected '(' after while."); condition = self.expression(); self.expect("DELIMITER", ")", "Expected ')' after do-while condition."); semicolon = self.expect("DELIMITER", ";", "Expected ';' after do-while statement.")
+        return node("DoWhileStatement", [body, condition], **({"incomplete": True} if semicolon is None or contains_error(body) or contains_error(condition) else {}))
 
     def for_statement(self) -> dict[str, Any]:
         self.advance(); self.expect("DELIMITER", "(", "Expected '(' after for.")
@@ -230,11 +324,14 @@ class Parser:
     def expression(self, minimum_precedence: int = 0) -> dict[str, Any]:
         left = self.unary()
         while self.current.lexeme in self.PRECEDENCE and self.PRECEDENCE[self.current.lexeme] >= minimum_precedence:
-            operator = self.advance(); right = self.expression(self.PRECEDENCE[operator.lexeme] + 1); left = node("BinaryExpression", [left, right], operator=operator.lexeme, **({"incomplete": True} if contains_error(right) else {}))
+            operator = self.advance()
+            next_minimum = self.PRECEDENCE[operator.lexeme] if operator.lexeme in {"=", "+=", "-=", "*=", "/=", "%="} else self.PRECEDENCE[operator.lexeme] + 1
+            right = self.expression(next_minimum)
+            left = node("ConditionalExpression" if operator.lexeme == "?" else "BinaryExpression", [left, right], operator=operator.lexeme, **({"incomplete": True} if contains_error(right) else {}))
         return left
 
     def unary(self) -> dict[str, Any]:
-        if self.current.lexeme in {"+", "-", "!"}:
+        if self.current.lexeme in {"+", "-", "!", "++", "--", "&"}:
             operator = self.advance(); child = self.unary(); return node("UnaryExpression", [child], operator=operator.lexeme, **({"incomplete": True} if contains_error(child) else {}))
         return self.primary()
 
@@ -243,16 +340,16 @@ class Parser:
         if self.match("DELIMITER", "("):
             value = self.expression(); closing = self.expect("DELIMITER", ")", "Expected ')' after expression.")
             return node("ParenthesizedExpression", [value], **({"incomplete": True} if closing is None or contains_error(value) else {}))
-        if token.type == "NUMBER":
-            self.advance(); return node("NumberLiteral", value=token.lexeme)
-        if token.type == "STRING":
-            self.advance(); return node("StringLiteral", value=token.lexeme)
-        if token.type == "CHARACTER":
-            self.advance(); return node("CharacterLiteral", value=token.lexeme)
-        if token.type == "KEYWORD" and token.lexeme in {"true", "false"}:
-            self.advance(); return node("BooleanLiteral", value=token.lexeme == "true")
+        if token.type in {"NUMBER", "STRING", "CHARACTER"}:
+            self.advance(); return node({"NUMBER": "NumberLiteral", "STRING": "StringLiteral", "CHARACTER": "CharacterLiteral"}[token.type], value=token.lexeme)
+        if token.lexeme in {"true", "false", "nullptr"}:
+            self.advance(); return node("BooleanLiteral" if token.lexeme != "nullptr" else "NullptrLiteral", value=token.lexeme == "true" if token.lexeme != "nullptr" else None)
         if token.type in {"IDENTIFIER", "KEYWORD"}:
-            self.advance(); result = node("Identifier", name=token.lexeme)
+            self.advance(); name = token.lexeme
+            if self.match("OPERATOR", "::"):
+                member = self.expect("IDENTIFIER", message="Expected a name after '::'.") or self.expect("KEYWORD", message="Expected a name after '::'.")
+                name = f"{name}::{member.lexeme if member else '<missing>'}"
+            result = node("Identifier", name=name)
             if self.match("DELIMITER", "("):
                 args: list[dict[str, Any]] = []
                 if not self.check("DELIMITER", ")"):
@@ -260,9 +357,12 @@ class Parser:
                         args.append(self.expression())
                         if not self.match("DELIMITER", ","): break
                 closing = self.expect("DELIMITER", ")", "Expected ')' after arguments.")
-                result = node("CallExpression", args, callee=token.lexeme, **({"incomplete": True} if closing is None else {}))
-            if self.match("OPERATOR", "++") or self.match("OPERATOR", "--"):
-                result = node("UpdateExpression", [result], operator=self.tokens[self.index - 1].lexeme)
+                result = node("CallExpression", args, callee=name, **({"incomplete": True} if closing is None else {}))
+            while self.match("DELIMITER", "["):
+                index = self.expression(); closing = self.expect("DELIMITER", "]", "Expected ']' after array index.")
+                result = node("IndexExpression", [result, index], **({"incomplete": True} if closing is None else {}))
+            if self.current.lexeme in {"++", "--"}:
+                result = node("UpdateExpression", [result], operator=self.advance().lexeme)
             return result
         self.error("CPP_EXPECTED_EXPRESSION", "Expected an expression.")
         if not self.check("EOF"): self.advance()

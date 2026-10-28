@@ -1,15 +1,20 @@
 from dataclasses import dataclass
 from typing import Any
 
-
 KEYWORDS = {
-    "int", "float", "double", "char", "bool", "void", "if", "else", "while", "for",
-    "return", "true", "false", "const", "break", "continue", "std", "cout", "endl",
+    "int", "short", "long", "float", "double", "char", "bool", "void", "auto",
+    "signed", "unsigned", "string", "if", "else", "while", "do", "for", "return",
+    "true", "false", "nullptr", "const", "break", "continue", "using", "namespace",
+    "std", "cout", "cin", "endl", "class", "template", "new", "delete",
 }
-TYPE_KEYWORDS = {"int", "float", "double", "char", "bool", "void"}
-TWO_CHARACTER_OPERATORS = {"==", "!=", "<=", ">=", "++", "--", "+=", "-=", "*=", "/=", "&&", "||", "<<", ">>", "::"}
-ONE_CHARACTER_OPERATORS = {"=", "+", "-", "*", "/", "%", "<", ">", "!", "&", "|"}
+TYPE_KEYWORDS = {"int", "short", "long", "float", "double", "char", "bool", "void", "auto", "signed", "unsigned", "string"}
+TWO_CHARACTER_OPERATORS = {
+    "<<=", ">>=", "==", "!=", "<=", ">=", "++", "--", "+=", "-=", "*=", "/=", "%=",
+    "&&", "||", "<<", ">>", "::",
+}
+ONE_CHARACTER_OPERATORS = {"=", "+", "-", "*", "/", "%", "<", ">", "!", "&", "|", "?"}
 DELIMITERS = {"(", ")", "{", "}", "[", "]", ",", ";", ".", ":"}
+SUPPORTED_HEADERS = {"iostream", "string", "cmath", "vector"}
 
 
 @dataclass(frozen=True)
@@ -87,16 +92,31 @@ def lex(source: str) -> tuple[list[Token], list[LexicalDiagnostic]]:
             continue
         if character == "#" and source.startswith("#include", index):
             value = ""
-            while index < len(source) and source[index] != "\n":
+            for _ in "#include":
                 value += advance()
+            while index < len(source) and source[index].isspace() and source[index] != "\n":
+                value += advance()
+            if index < len(source) and source[index] in '<"':
+                closing = ">" if source[index] == "<" else '"'
+                value += advance()
+                while index < len(source) and source[index] not in {closing, "\n"}:
+                    value += advance()
+                if index < len(source) and source[index] == closing:
+                    value += advance()
+            else:
+                while index < len(source) and source[index] != "\n":
+                    value += advance()
             target = value[len("#include"):].strip()
-            if not ((target.startswith("<") and target.endswith(">")) or (target.startswith('"') and target.endswith('"'))):
+            header = target[1:-1] if len(target) >= 2 and target[0] in '<"' and target[-1] == (">" if target[0] == "<" else '"') else ""
+            if not header:
                 diagnostics.append(_diagnostic("CPP_MALFORMED_INCLUDE", "Expected a header name after #include.", start_line, start_column, column))
+            elif header not in SUPPORTED_HEADERS:
+                diagnostics.append(_diagnostic("CPP_UNSUPPORTED_HEADER", f"Header {header!r} is outside the supported Mini C++ subset.", start_line, start_column, column))
             tokens.append(_token("PREPROCESSOR", value, start_line, start_column, column))
             continue
         if character == "#":
             advance()
-            diagnostics.append(_diagnostic("CPP_UNSUPPORTED_PREPROCESSOR", "Only #include directives are supported.", start_line, start_column, column))
+            diagnostics.append(_diagnostic("CPP_UNSUPPORTED_PREPROCESSOR", "Only supported #include directives are recognized.", start_line, start_column, column))
             continue
         if character.isalpha() or character == "_":
             value = ""
@@ -136,9 +156,12 @@ def lex(source: str) -> tuple[list[Token], list[LexicalDiagnostic]]:
                 diagnostics.append(_diagnostic("CPP_INVALID_CHARACTER_LITERAL", "Character literals must contain one character.", start_line, start_column, column))
             tokens.append(_token("STRING" if quote == '"' else "CHARACTER", value, start_line, start_column, column))
             continue
-        two = source[index:index + 2]
-        if two in TWO_CHARACTER_OPERATORS:
-            advance(); advance(); tokens.append(_token("OPERATOR", two, start_line, start_column, column)); continue
+        matched = next((operator for operator in sorted(TWO_CHARACTER_OPERATORS, key=len, reverse=True) if source.startswith(operator, index)), None)
+        if matched:
+            for _ in matched:
+                advance()
+            tokens.append(_token("OPERATOR", matched, start_line, start_column, column))
+            continue
         if character in ONE_CHARACTER_OPERATORS:
             advance(); tokens.append(_token("OPERATOR", character, start_line, start_column, column)); continue
         if character in DELIMITERS:
