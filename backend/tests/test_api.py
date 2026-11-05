@@ -71,7 +71,7 @@ def test_analyze_marks_empty_sources_as_no_tree() -> None:
 
 
 def test_analyze_rejects_unknown_language() -> None:
-    response = client.post("/api/analyze", json={"language": "mini_java", "code": "class Main {}"})
+    response = client.post("/api/analyze", json={"language": "unsupported_language", "code": "class Main {}"})
     assert response.status_code == 422
 
 

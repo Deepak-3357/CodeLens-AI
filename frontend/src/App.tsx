@@ -186,7 +186,7 @@ function App() {
       <section className="comparison-section" aria-labelledby="comparison-action-heading"><div className="comparison-action"><div><p className="eyebrow">COMPARE RESULTS</p><h2 id="comparison-action-heading">Original versus generated</h2><p>{canCompare ? 'Both current analysis results are ready.' : !generatedSource ? 'Generate or enter code in Editor B, then validate both sides.' : !originalCurrent || !generatedCurrent ? 'Validate both current source versions to enable comparison.' : 'The languages must match before comparison.'}</p></div><div className="comparison-controls"><span className="pill">{canCompare ? 'Ready' : 'Waiting for current results'}</span><button type="button" onClick={() => setShowComparison(true)} disabled={!canCompare}>Compare Results</button></div></div>{showComparison && comparison && <ComparisonReport report={comparison} language={originalLanguage} />}</section>
     </>}
     {activeView === 'automata' && <AutomataLab selectedToken={selectedToken} sourceCode={originalSource} sourceLanguage={originalLanguage} sourceAnalysis={originalCurrent ? originalAnalysis.result : null} onInspectToken={inspectToken} />}
-    <footer>Mini Python, Mini C, and Mini C++ are educational subsets. CodeLens AI analyzes source text only; it never executes submitted code.</footer>
+      <footer>Mini Python, Mini C, and Mini C++ are educational subsets. Static analysis never executes source text; supported Mini C++ programs use the restricted educational interpreter described in the documentation.</footer>
   </main>
 }
 

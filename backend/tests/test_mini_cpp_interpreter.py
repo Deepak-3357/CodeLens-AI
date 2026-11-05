@@ -28,6 +28,24 @@ def test_interprets_main_function_and_cin() -> None:
     assert result.stdout == "Age: 21\n"
 
 
+def test_interprets_multiple_inputs_and_floats() -> None:
+    result = run("float first; float second; cin >> first >> second; cout << first + second;", "1.5 2.25")
+    assert result.status == "Success"
+    assert result.stdout == "3.75"
+
+
+def test_reports_missing_and_invalid_input() -> None:
+    missing = run("int value; cin >> value; cout << value;", "")
+    assert missing.status == "Error"
+    assert missing.error_category == "runtime"
+    assert "input was exhausted" in missing.stderr
+
+    invalid = run("int value; cin >> value;", "not-an-int")
+    assert invalid.status == "Error"
+    assert invalid.error_category == "runtime"
+    assert "could not be converted" in invalid.stderr
+
+
 def test_rejects_invalid_syntax_before_interpreter() -> None:
     analysis = analyze_mini_cpp("int value = 10")
     assert analysis["success"] is False
@@ -62,3 +80,18 @@ def test_enforces_output_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.status == "Error"
     assert result.error_category == "resource_limit"
     assert "output limit" in result.stderr
+
+
+def test_enforces_input_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODELENS_MINI_CPP_MAX_INPUT_LENGTH", "2")
+    result = run("cout << 1;", "123")
+    assert result.status == "Error"
+    assert result.error_category == "input_limit"
+
+
+def test_enforces_call_depth_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODELENS_MINI_CPP_MAX_CALL_DEPTH", "2")
+    result = run("int loop() { return loop(); } int main() { return loop(); }")
+    assert result.status == "Error"
+    assert result.error_category == "resource_limit"
+    assert "call-depth" in result.stderr

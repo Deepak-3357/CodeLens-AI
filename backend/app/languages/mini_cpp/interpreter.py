@@ -55,11 +55,15 @@ class MiniCppInterpreter:
         self.started = time.monotonic()
         self.max_steps = _bounded_int("CODELENS_MINI_CPP_MAX_STEPS", 10_000, 1, 1_000_000)
         self.max_output = _bounded_int("CODELENS_MINI_CPP_MAX_OUTPUT_LENGTH", 64_000, 1, 1_000_000)
+        self.max_input = _bounded_int("CODELENS_MINI_CPP_MAX_INPUT_LENGTH", 100_000, 0, 100_000)
         self.max_time = _bounded_float("CODELENS_MINI_CPP_TIMEOUT_SECONDS", 2.0, 0.01, 10.0)
         self.max_call_depth = _bounded_int("CODELENS_MINI_CPP_MAX_CALL_DEPTH", 32, 1, 128)
+        self.call_depth = 0
 
     def run(self) -> MiniCppExecutionOutcome:
         try:
+            if len(self.stdin) > self.max_input:
+                raise MiniCppExecutionError("Mini C++ interpreter input limit exceeded.", "input_limit")
             self._collect_functions(self.tree)
             top_level = [child for child in self.tree.get("children", []) if child.get("type") != "FunctionDefinition"]
             self._execute_statements(top_level, 0)
@@ -71,6 +75,8 @@ class MiniCppInterpreter:
             return MiniCppExecutionOutcome("Error", "".join(self.output), str(error), self._duration_ms(), "Interpreted Mini C++ execution did not complete.", error.category)
         except _ReturnSignal:
             return MiniCppExecutionOutcome("Error", "".join(self.output), "Return is only supported inside a function.", self._duration_ms(), "Interpreted Mini C++ execution did not complete.", "unsupported")
+        except Exception:
+            return MiniCppExecutionOutcome("Error", "".join(self.output), "Mini C++ interpreter encountered an unsupported runtime operation.", self._duration_ms(), "Interpreted Mini C++ execution did not complete.", "runtime")
 
     def _duration_ms(self) -> float:
         return (time.monotonic() - self.started) * 1000
@@ -271,13 +277,14 @@ class MiniCppInterpreter:
         raise MiniCppExecutionError(f"Mini C++ interpreter does not support expression {expression_type!r}.", "unsupported")
 
     def _call_function(self, name: str, arguments: list[Any], depth: int) -> Any:
-        if depth > self.max_call_depth:
+        if self.call_depth >= self.max_call_depth:
             raise MiniCppExecutionError("Mini C++ interpreter call-depth limit exceeded.", "resource_limit")
         function = self.functions.get(name)
         if function is None:
             raise MiniCppExecutionError(f"Function {name!r} is not supported by the interpreter.", "unsupported")
         previous = self.environment
         self.environment = dict(previous)
+        self.call_depth += 1
         parameters = function["parameters"]
         if len(arguments) != len(parameters):
             raise MiniCppExecutionError(f"Function {name!r} received the wrong number of arguments.", "runtime")
@@ -290,6 +297,7 @@ class MiniCppInterpreter:
             return returned.value
         finally:
             self.environment = previous
+            self.call_depth -= 1
         return None
 
     def _divide(self, left: Any, right: Any) -> Any:
